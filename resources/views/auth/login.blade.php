@@ -44,6 +44,14 @@
                 </p>
             </form>
 
+            @if (config('services.google.client_id'))
+                <p class="auth-alt" aria-hidden="true">— or —</p>
+
+                <a href="{{ route('google.redirect') }}" class="btn btn-outline-dark btn-block">
+                    Continue with Google
+                </a>
+            @endif
+
             <p class="auth-alt">
                 Don't have an account? <a href="{{ route('register') }}">Register</a>
             </p>

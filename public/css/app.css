@@ -2287,8 +2287,66 @@ ul {
     background: #fff;
 }
 
-.qty-btn {
-    padding: 8px 12px;
+/* Cart-page quantity stepper: [ − | input | + ] */
+.qty-form {
+    flex-wrap: wrap;
+}
+
+.qty-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.qty-step {
+    width: 32px;
+    border: none;
+    background: var(--bg);
+    color: var(--navy);
+    font-size: 1.05rem;
+    line-height: 1;
+    padding: 8px 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.qty-step:hover {
+    background: #e8edf5;
+}
+
+.qty-step:active {
+    background: #dde5f0;
+}
+
+.qty-stepper input[type="number"] {
+    width: 54px;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    padding: 8px 4px;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.qty-stepper input[type="number"]::-webkit-outer-spin-button,
+.qty-stepper input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.qty-stepper input[type="number"]:focus {
+    border-left-color: var(--navy);
+    border-right-color: var(--navy);
+    background: #fff;
+}
+
+.qty-form.is-updating .qty-step {
+    opacity: 0.6;
+    pointer-events: none;
 }
 
 .btn-remove {

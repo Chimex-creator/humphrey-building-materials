@@ -66,19 +66,28 @@
                                 <div class="cart-line-price">₦{{ number_format((float) $p->price, 0) }}</div>
 
                                 <div class="cart-line-qty">
-                                    <form action="{{ route('cart.update', $p->id) }}" method="POST" class="qty-form">
+                                    <form action="{{ route('cart.update', $p->id) }}" method="POST" class="qty-form"
+                                          data-cart-line="{{ $p->id }}"
+                                          data-min="{{ max(1, (int) $p->minOrder()) }}"
+                                          data-max="{{ (int) $p->stock_quantity }}"
+                                          data-step="{{ (int) $p->step() }}">
                                         @csrf
                                         @method('PATCH')
-                                        <input
-                                            type="number"
-                                            name="qty"
-                                            value="{{ $line->qty }}"
-                                            min="0"
-                                            step="{{ $p->step() }}"
-                                            max="{{ $p->stock_quantity }}"
-                                            aria-label="Quantity for {{ $p->name }}"
-                                        >
-                                        <button type="submit" class="btn btn-sm btn-navy qty-btn">Update</button>
+                                        <span class="qty-stepper">
+                                            <button type="button" class="qty-step" data-dir="-1"
+                                                    aria-label="Decrease quantity of {{ $p->name }}">&minus;</button>
+                                            <input
+                                                type="number"
+                                                name="qty"
+                                                value="{{ $line->qty }}"
+                                                min="0"
+                                                step="{{ $p->step() }}"
+                                                max="{{ $p->stock_quantity }}"
+                                                aria-label="Quantity for {{ $p->name }}"
+                                            >
+                                            <button type="button" class="qty-step" data-dir="1"
+                                                    aria-label="Increase quantity of {{ $p->name }}">+</button>
+                                        </span>
                                         @if ($p->minOrder() > 1 || $p->step() > 1)
                                             <small class="field-help">
                                                 Min {{ $p->minOrder() }}@if ($p->step() > 1), multiples of {{ $p->step() }}@endif · enter 0 to remove
@@ -116,8 +125,8 @@
                         <h2>Order Summary</h2>
                         <ul class="summary-rows">
                             <li>
-                                <span>Subtotal ({{ $items->sum('qty') }} item(s))</span>
-                                <strong>₦{{ number_format($subtotal, 0) }}</strong>
+                                <span>Subtotal (<span class="js-cart-count">{{ $items->sum('qty') }}</span> item(s))</span>
+                                <strong class="js-cart-subtotal">₦{{ number_format($subtotal, 0) }}</strong>
                             </li>
                             <li>
                                 <span>Delivery</span>
@@ -125,7 +134,7 @@
                             </li>
                             <li class="summary-total">
                                 <span>Total before delivery</span>
-                                <strong>₦{{ number_format($subtotal, 0) }}</strong>
+                                <strong class="js-cart-subtotal">₦{{ number_format($subtotal, 0) }}</strong>
                             </li>
                         </ul>
 

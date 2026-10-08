@@ -84,6 +84,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
+use App\Http\Controllers\Auth\GoogleLoginController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
@@ -103,6 +104,13 @@ Route::middleware('guest')->group(function () {
 
     Route::get('/login', [LoginController::class, 'show'])->name('login');
     Route::post('/login', [LoginController::class, 'store']);
+
+    // "Continue with Google" — customers only; the controller refuses any
+    // admin/staff account and never changes a role.
+    Route::get('/auth/google', [GoogleLoginController::class, 'redirect'])
+        ->name('google.redirect');
+    Route::get('/auth/google/callback', [GoogleLoginController::class, 'callback'])
+        ->name('google.callback');
 
     Route::get('/forgot-password', [ForgotPasswordController::class, 'show'])->name('password.request');
     Route::post('/forgot-password', [ForgotPasswordController::class, 'send']);

@@ -76,7 +76,14 @@ class CartController extends Controller
         return back()->with($ok ? 'status' : 'error', $message);
     }
 
-    /** Update quantity for one cart line. */
+    /**
+     * Update quantity for one cart line.
+     *
+     * Two flavours, mirroring store():
+     *  - normal form PATCH → redirect back (works with JavaScript disabled)
+     *  - AJAX/fetch PATCH  → JSON so the +/- stepper can update line total,
+     *                       subtotal and badge instantly without reloading
+     */
     public function update(Request $request, int $productId)
     {
         $data = $request->validate([
@@ -88,13 +95,42 @@ class CartController extends Controller
         // Qty 0 means "remove this line" and is always allowed.
         if ($product && (int) $data['qty'] > 0) {
             if ($error = $product->quantityError((int) $data['qty'])) {
-                return back()->with('error', $error);
+                return $this->updateResponse($request, false, $error, $productId);
             }
         }
 
         Cart::update($productId, (int) $data['qty']);
 
-        return redirect()->route('cart.index')->with('status', 'Cart updated.');
+        return $this->updateResponse($request, true, 'Cart updated.', $productId);
+    }
+
+    /**
+     * Response for one line update. The JSON payload always reflects the
+     * cart's REAL server-side state, so a rejected request can revert the
+     * input to what is actually stored (nothing is trusted client-side).
+     */
+    private function updateResponse(Request $request, bool $ok, string $message, int $productId)
+    {
+        if ($request->expectsJson()) {
+            $line = Cart::items()->firstWhere('id', $productId);
+
+            return response()->json([
+                'success' => $ok,
+                'message' => $message,
+                'qty' => $line ? (int) $line->qty : 0,
+                'line_total' => $line ? '₦'.number_format($line->line_total, 0) : null,
+                'subtotal' => '₦'.number_format(Cart::subtotal(), 0),
+                'item_count' => (int) Cart::items()->sum('qty'),
+                'cart_count' => Cart::count(),
+                'removed' => $ok && $line === null,
+            ], $ok ? 200 : 422);
+        }
+
+        if ($ok) {
+            return redirect()->route('cart.index')->with('status', $message);
+        }
+
+        return back()->with('error', $message);
     }
 
     /** Remove one line from the cart. */

@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initFlashToasts();
     initCopyEmail();
     initAddToCart();
+    initCartQtyControls();
     initDeleteConfirmations();
     initCatalogueScroll();
     initBackToTop();
@@ -231,6 +232,179 @@ function updateCartBadge(count) {
     fresh.className = 'cart-badge';
     fresh.textContent = String(count);
     link.appendChild(fresh);
+}
+
+/* --------------------------------------------------------------------------
+   4. Cart quantity stepper (cart page) — +/- buttons and manual entry
+   update the line total, summary subtotal, item count and header badge
+   IMMEDIATELY via fetch (PATCH), without reloading the page.
+
+   The server stays the authority: every click sends the new quantity and
+   the response carries the cart's real state. On any error we show a toast
+   and revert the input to that server state. With JavaScript disabled the
+   form still PATCHes normally (full page reload) — nothing is lost.
+
+   Boundaries respected client-side to avoid pointless round trips:
+   minus stops at min (minimum order, never below 1), plus stops at stock,
+   both move by the product's quantity step.
+   -------------------------------------------------------------------------- */
+function initCartQtyControls() {
+    if (typeof fetch !== 'function') return;
+
+    document.querySelectorAll('form.qty-form').forEach(function (form) {
+        const input = form.querySelector('input[name="qty"]');
+        if (!input) return;
+
+        const min = parseInt(form.getAttribute('data-min'), 10) || 1;
+        const max = parseInt(form.getAttribute('data-max'), 10) || 0; // 0 = no stock cap known
+        const step = parseInt(form.getAttribute('data-step'), 10) || 1;
+        let busy = false;
+
+        // Remember the last quantity the server confirmed (for reverts).
+        input.dataset.serverQty = input.value;
+
+        const submitLine = function (nextQty, opts) {
+            opts = opts || {};
+            if (busy) return;
+            if (isNaN(nextQty) || nextQty < 0) return;
+            if (String(nextQty) === input.dataset.serverQty && !opts.force) return;
+
+            busy = true;
+            form.classList.add('is-updating');
+
+            const body = new URLSearchParams();
+            body.append('qty', String(nextQty));
+
+            fetch(form.action, {
+                method: 'PATCH',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': (form.querySelector('input[name="_token"]') || {}).value || ''
+                },
+                body: body,
+                credentials: 'same-origin'
+            })
+                .then(function (response) {
+                    return response.json().then(function (data) {
+                        return { ok: response.ok, data: data };
+                    });
+                })
+                .then(function (result) {
+                    const data = result.data || {};
+
+                    if (!result.ok || data.success !== true) {
+                        // Rejected (stock/min/step changed, validation…):
+                        // show why, then snap back to the real cart state.
+                        showToast(data.message || 'Could not update the quantity.', 'error');
+                        applyCartLine(form, input, data.qty !== undefined ? data.qty : input.dataset.serverQty, data);
+                        return;
+                    }
+
+                    if (data.removed) {
+                        // Qty 0 removed the line — the page layout changes too,
+                        // so a reload shows the truthful cart (incl. empty state).
+                        window.location.reload();
+                        return;
+                    }
+
+                    applyCartLine(form, input, data.qty, data);
+
+                    if (opts.toast) showToast(data.message || 'Cart updated.', 'success');
+                })
+                .catch(function () {
+                    showToast('Network problem — the quantity was not updated.', 'error');
+                    applyCartLine(form, input, input.dataset.serverQty, {});
+                })
+                .finally(function () {
+                    busy = false;
+                    form.classList.remove('is-updating');
+                });
+        };
+
+        form.querySelectorAll('.qty-step').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const dir = parseInt(button.getAttribute('data-dir'), 10);
+                const current = parseInt(input.value, 10);
+                if (isNaN(current)) return;
+
+                const next = current + dir * step;
+
+                if (next < min) {
+                    return; // already at the minimum valid quantity — stay put
+                }
+
+                if (max > 0 && next > max) {
+                    if (dir > 0) {
+                        // Largest quantity the rules allow (min / step / stock).
+                        const best = Math.max(min, Math.floor(max / step) * step);
+                        if (best > current) {
+                            submitLine(best);
+                        } else {
+                            showToast('Only ' + max + ' in stock.', 'error');
+                        }
+                    }
+                    return;
+                }
+
+                submitLine(next);
+            });
+        });
+
+        // Manual typing / native spinner arrows: apply on change (blur/Enter).
+        input.addEventListener('change', function () {
+            const next = parseInt(input.value, 10);
+            if (isNaN(next)) {
+                input.value = input.dataset.serverQty; // nonsense entry — just restore
+                return;
+            }
+            submitLine(next, { toast: true });
+        });
+
+        // The Update button (and Enter) — same immediate behaviour, with a toast.
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            const next = parseInt(input.value, 10);
+            if (isNaN(next)) {
+                input.value = input.dataset.serverQty;
+                return;
+            }
+            submitLine(next, { toast: true, force: true });
+        });
+    });
+}
+
+/**
+ * Paint a server response onto the cart page: the input, this line's
+ * total, both summary subtotals, the item count and the header badge.
+ */
+function applyCartLine(form, input, qty, data) {
+    if (qty !== undefined && qty !== null && qty !== '') {
+        input.value = String(qty);
+        input.dataset.serverQty = String(qty);
+    }
+
+    const line = form.closest('.cart-line');
+    if (line && data.line_total) {
+        const total = line.querySelector('.cart-line-total');
+        if (total) total.textContent = data.line_total;
+    }
+
+    if (data.subtotal) {
+        document.querySelectorAll('.js-cart-subtotal').forEach(function (el) {
+            el.textContent = data.subtotal;
+        });
+    }
+
+    if (typeof data.item_count === 'number') {
+        document.querySelectorAll('.js-cart-count').forEach(function (el) {
+            el.textContent = String(data.item_count);
+        });
+    }
+
+    if (typeof data.cart_count === 'number') {
+        updateCartBadge(data.cart_count);
+    }
 }
 
 /* --------------------------------------------------------------------------

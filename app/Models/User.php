@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -39,11 +40,13 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar_path',
         'is_active',
         'email_verified_at',
+        'google_id',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'google_id',
     ];
 
     protected function casts(): array
@@ -100,7 +103,7 @@ class User extends Authenticatable implements MustVerifyEmail
             return null;
         }
 
-        return \Illuminate\Support\Facades\Storage::disk('public')->exists($this->avatar_path)
+        return Storage::disk('public')->exists($this->avatar_path)
             ? asset('storage/'.$this->avatar_path)
             : null;
     }

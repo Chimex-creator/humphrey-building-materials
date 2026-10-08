@@ -22,6 +22,22 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Google OAuth (customer sign-in via Laravel Socialite)
+    |--------------------------------------------------------------------------
+    |
+    | Credentials come from the environment only — never hardcode them.
+    | The redirect must match, byte for byte, the Authorized Redirect URI
+    | registered in Google Cloud Console.
+    |
+    */
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/google/callback'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
