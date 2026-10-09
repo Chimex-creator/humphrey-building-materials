@@ -49,13 +49,22 @@ class PendingRegistration extends Model
         return $this->expires_at === null || $this->expires_at->isPast();
     }
 
-    /** Absolute signed URL that completes the registration. */
+    /**
+     * Absolute signed URL that completes the registration.
+     *
+     * The HMAC covers only the link's PATH (relative signing), so the link
+     * keeps working when the site is opened through a different protocol or
+     * host than the one that generated it — e.g. http→https upgrades or
+     * platform URL rewrites, which used to break the signature and trigger
+     * a 403. The relative URL is wrapped with URL::to() so the emailed link
+     * is still a normal clickable absolute URL for the recipient.
+     */
     public function verificationUrl(): string
     {
-        return URL::signedRoute('registration.verify', [
+        return URL::to(URL::signedRoute('registration.verify', [
             'id' => $this->id,
             'hash' => sha1($this->email),
-        ]);
+        ], null, false));
     }
 
     /** Send (or re-send) the real verification email via the app's SMTP. */

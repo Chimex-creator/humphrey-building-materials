@@ -6,7 +6,9 @@ use App\Models\PendingRegistration;
 use App\Models\User;
 use App\Notifications\VerifyPendingRegistration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 /**
@@ -67,7 +69,7 @@ class RegistrationTest extends TestCase
         $pending = PendingRegistration::firstOrFail();
 
         $this->assertNotSame('secret-pass-1', $pending->password);
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('secret-pass-1', $pending->password));
+        $this->assertTrue(Hash::check('secret-pass-1', $pending->password));
     }
 
     public function test_the_pending_page_is_dedicated_and_offers_resend(): void
@@ -95,7 +97,7 @@ class RegistrationTest extends TestCase
         $user = User::where('email', 'miraclepaul728@gmail.com')->firstOrFail();
         $this->assertSame(User::ROLE_CUSTOMER, $user->role);
         $this->assertNotNull($user->email_verified_at);
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('secret-pass-1', $user->password));
+        $this->assertTrue(Hash::check('secret-pass-1', $user->password));
 
         // Pending registration completed/removed.
         $this->assertDatabaseMissing('pending_registrations', ['email' => 'miraclepaul728@gmail.com']);
@@ -111,9 +113,9 @@ class RegistrationTest extends TestCase
         $this->post(route('logout'));
 
         $this->post('/login', [
-                'email' => 'miraclepaul728@gmail.com',
-                'password' => 'secret-pass-1',
-            ])
+            'email' => 'miraclepaul728@gmail.com',
+            'password' => 'secret-pass-1',
+        ])
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('home'));
     }
@@ -177,7 +179,7 @@ class RegistrationTest extends TestCase
         $this->assertSame(1, PendingRegistration::count());
         $fresh = PendingRegistration::firstOrFail();
         $this->assertTrue($fresh->is($first));
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('second-pass-1', $fresh->password));
+        $this->assertTrue(Hash::check('second-pass-1', $fresh->password));
 
         Notification::assertSentTo($fresh, VerifyPendingRegistration::class);
     }
@@ -235,7 +237,7 @@ class RegistrationTest extends TestCase
         $pending = PendingRegistration::firstOrFail();
 
         // Valid signature, wrong hash → the controller must reject it.
-        $url = \Illuminate\Support\Facades\URL::signedRoute('registration.verify', [
+        $url = URL::signedRoute('registration.verify', [
             'id' => $pending->id,
             'hash' => sha1('someone-else@example.test'),
         ]);
@@ -254,7 +256,7 @@ class RegistrationTest extends TestCase
         $this->register();
         $pending = PendingRegistration::firstOrFail();
 
-        $url = \Illuminate\Support\Facades\URL::signedRoute('registration.verify', [
+        $url = URL::signedRoute('registration.verify', [
             'id' => $pending->id + 999,
             'hash' => sha1($pending->email),
         ]);
@@ -273,9 +275,54 @@ class RegistrationTest extends TestCase
         $url = $pending->verificationUrl();
         $tampered = preg_replace('#/verify/\d+#', '/verify/'.($pending->id + 1), $url);
 
-        $this->get($tampered)->assertForbidden();
+        // Friendly "not valid" page instead of a raw 403 — the account
+        // is still never created.
+        $this->get($tampered)->assertOk()->assertSee('not valid', false);
 
         $this->assertDatabaseMissing('users', ['email' => 'miraclepaul728@gmail.com']);
+    }
+
+    public function test_a_link_without_any_signature_is_rejected_with_a_friendly_page(): void
+    {
+        Notification::fake();
+        $this->register();
+        $pending = PendingRegistration::firstOrFail();
+
+        // Bare path, no signature at all — must not create anything.
+        $this->get('/register/verify/'.$pending->id.'/'.sha1($pending->email))
+            ->assertOk()
+            ->assertSee('not valid', false);
+
+        $this->assertDatabaseMissing('users', ['email' => 'miraclepaul728@gmail.com']);
+        $this->assertDatabaseHas('pending_registrations', ['email' => 'miraclepaul728@gmail.com']);
+    }
+
+    public function test_verification_link_survives_a_protocol_and_host_change(): void
+    {
+        // Production regression: links generated behind http (or one
+        // hostname) used to 403 when opened through https / another host
+        // (the old `signed` middleware validated the absolute URL only).
+        Notification::fake();
+        $this->register();
+
+        $pending = PendingRegistration::firstOrFail();
+        $url = $pending->verificationUrl();
+
+        $parts = parse_url($url);
+        $this->assertSame('/register/verify/'.$pending->id.'/'.sha1($pending->email), $parts['path']);
+
+        // Same link, different scheme + host (as after an http→https upgrade).
+        $openedElsewhere = 'https://humphrey-building-materials-production.up.railway.app'
+            .$parts['path'].'?'.$parts['query'];
+
+        $this->get($openedElsewhere)
+            ->assertRedirect(route('home'))
+            ->assertSessionHas('status');
+
+        $user = User::where('email', 'miraclepaul728@gmail.com')->firstOrFail();
+        $this->assertNotNull($user->email_verified_at);
+        $this->assertDatabaseMissing('pending_registrations', ['email' => 'miraclepaul728@gmail.com']);
+        $this->assertAuthenticatedAs($user);
     }
 
     public function test_an_expired_link_is_rejected_until_a_fresh_one_is_requested(): void

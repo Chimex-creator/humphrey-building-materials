@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\PendingRegistration;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
@@ -18,9 +17,13 @@ use Laravel\Socialite\Facades\Socialite;
  *  - Google never changes anyone's role; staff accounts are refused and
  *    must keep using email + password on the normal login.
  *  - An existing customer with the same email is linked, never duplicated.
- *  - A pending (unverified) email/password registration for the same
- *    address is left untouched — that flow must finish first.
- *  - A Google-authenticated email counts as verified.
+ *  - The identity must be one Google itself has marked email_verified;
+ *    a completed redirect alone proves nothing.
+ *  - Google users NEVER go through the email/password verification flow:
+ *    they are created verified and logged in immediately. A leftover
+ *    pending registration for the same address is left untouched (it
+ *    resolves safely through RegisterController::verify()'s existing-
+ *    account branch, so no duplicate can appear).
  */
 class GoogleLoginController extends Controller
 {
@@ -63,17 +66,21 @@ class GoogleLoginController extends Controller
                 ->with('error', 'Google did not share an email address for that account — please log in with your password.');
         }
 
-        // A normal email/password registration for this address is still
-        // waiting for its verification link. Never bypass or destroy it:
-        // send the person back to that flow to finish it first.
-        if (PendingRegistration::where('email', $email)->exists()) {
+        // Google must have VERIFIED the email address itself — completing
+        // the OAuth redirect proves nothing on its own. Identities Google
+        // marks unverified are refused outright.
+        $googleClaims = $googleUser->user ?? [];
+        if (! ($googleClaims['email_verified'] ?? false)) {
             return redirect()
-                ->route('registration.pending')
-                ->with('pending_email', $email)
-                ->with('status', 'A registration for '.$email.' is still waiting for email verification. '
-                    .'Please click the link we emailed you (or press "Resend Verification Email") to finish '
-                    .'that registration first, then you can log in normally.');
+                ->route('login')
+                ->with('error', 'Google has not verified the email address on that account, so it cannot be used here. '
+                    .'Please continue with email and password instead.');
         }
+
+        // A leftover email/password pending registration for this address
+        // (if any) is deliberately left untouched: this Google identity is
+        // independently verified, no duplicate account can result, and the
+        // pending row still resolves safely if its emailed link is used.
 
         $googleId = (string) $googleUser->getId();
 

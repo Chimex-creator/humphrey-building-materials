@@ -52,6 +52,14 @@
                 <button type="submit" class="btn btn-primary btn-block">Create Account</button>
             </form>
 
+            @if (config('services.google.client_id'))
+                <p class="auth-alt" aria-hidden="true">— or —</p>
+
+                <a href="{{ route('google.redirect') }}" class="btn btn-outline-dark btn-block">
+                    Continue with Google
+                </a>
+            @endif
+
             <p class="auth-alt">
                 Already have an account? <a href="{{ route('login') }}">Log in</a>
             </p>

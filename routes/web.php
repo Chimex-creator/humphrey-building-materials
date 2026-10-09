@@ -119,10 +119,13 @@ Route::middleware('guest')->group(function () {
     Route::post('/reset-password', [ResetPasswordController::class, 'update'])->name('password.update');
 });
 
-// Completing a pending registration: `signed` rejects tampered links,
-// the controller checks id/hash, expiry and one-time use.
+// Completing a pending registration. The controller validates the HMAC
+// signature itself (accepting both relative-signed links — host/scheme
+// agnostic — and older absolute ones), plus id/hash, expiry and one-time
+// use; a `signed` middleware here would 403 whenever the link is opened
+// through a different protocol/host than the one that generated it.
 Route::get('/register/verify/{id}/{hash}', [RegisterController::class, 'verify'])
-    ->middleware(['signed', 'throttle:10,1'])->name('registration.verify');
+    ->middleware('throttle:10,1')->name('registration.verify');
 
 // ----- Logged-in users only (email NOT yet required) -----
 // Logout and the verification screens must stay reachable for an

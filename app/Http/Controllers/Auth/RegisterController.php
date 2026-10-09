@@ -123,6 +123,20 @@ class RegisterController extends Controller
      */
     public function verify(Request $request, string $id, string $hash)
     {
+        // HMAC signature first (relative-signed links are host/scheme
+        // agnostic; older absolute links from emails already sent still
+        // validate too). Replaces the old `signed` middleware, which
+        // aborted with a 403 whenever the link was opened through a
+        // different protocol/host (e.g. an http→https upgrade).
+        if (! $request->hasValidSignature() && ! $request->hasValidSignature(false)) {
+            return view('auth.verification-result', [
+                'title' => 'This verification link is not valid',
+                'message' => 'The link may have been changed in transit or copied incompletely. '
+                    .'If you still need to verify, request a fresh link below.',
+                'email' => session('pending_email'),
+            ]);
+        }
+
         $pending = PendingRegistration::find($id);
 
         // Unknown id, or hash that does not match this email → bogus/tampered.

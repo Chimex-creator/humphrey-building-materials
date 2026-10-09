@@ -16,8 +16,9 @@ use Tests\TestCase;
  * The invariants that matter:
  *  - Google never changes anyone's role and never creates staff accounts.
  *  - Existing customers are linked, never duplicated.
- *  - A pending email/password registration for the same address is never
- *    bypassed or destroyed.
+ *  - Google-authenticated users are NEVER sent through the email/password
+ *    verification flow — they arrive verified and logged in.
+ *  - A leftover pending registration is never destroyed or duplicated.
  *  - Deactivated accounts stay out.
  */
 class GoogleLoginTest extends TestCase
@@ -35,7 +36,7 @@ class GoogleLoginTest extends TestCase
         config()->set('services.google.redirect', '/auth/google/callback');
     }
 
-    private function googleAccount(string $email, string $id = 'g-123', string $name = 'Google Customer'): SocialiteUser
+    private function googleAccount(string $email, string $id = 'g-123', string $name = 'Google Customer', bool $emailVerified = true): SocialiteUser
     {
         $user = new SocialiteUser;
         $user->map([
@@ -43,6 +44,8 @@ class GoogleLoginTest extends TestCase
             'email' => $email,
             'name' => $name,
             'avatar' => 'https://example.test/avatar.jpg',
+            // Google's raw claims — the controller requires email_verified.
+            'user' => ['id' => $id, 'email' => $email, 'email_verified' => $emailVerified],
         ]);
 
         return $user;
@@ -61,6 +64,19 @@ class GoogleLoginTest extends TestCase
         config()->set('services.google.client_id', null);
 
         $this->get(route('login'))
+            ->assertOk()
+            ->assertDontSee('Continue with Google');
+    }
+
+    public function test_register_page_shows_the_google_button_only_when_configured(): void
+    {
+        $this->get(route('register'))
+            ->assertOk()
+            ->assertSee('Continue with Google');
+
+        config()->set('services.google.client_id', null);
+
+        $this->get(route('register'))
             ->assertOk()
             ->assertDontSee('Continue with Google');
     }
@@ -90,6 +106,7 @@ class GoogleLoginTest extends TestCase
     {
         Socialite::fake('google', $this->googleAccount('new.shopper@gmail.com', 'g-new', 'New Shopper'));
 
+        // Straight to the shop — never the email-verification pages.
         $this->get(route('google.callback'))
             ->assertRedirect(route('home'));
 
@@ -214,10 +231,26 @@ class GoogleLoginTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     | Callback — pending registration is never bypassed
+     | Callback — Google must have verified the email itself
      * ---------------------------------------------------------------- */
 
-    public function test_pending_registration_for_same_email_is_left_untouched(): void
+    public function test_google_identities_without_email_verified_are_refused(): void
+    {
+        Socialite::fake('google', $this->googleAccount('unverified.claim@gmail.com', 'g-unver', 'Unverified Person', false));
+
+        $this->get(route('google.callback'))
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('error');
+
+        $this->assertGuest();
+        $this->assertSame(0, User::where('email', 'unverified.claim@gmail.com')->count());
+    }
+
+    /* ------------------------------------------------------------------
+     | Callback — pending registration is never duplicated or destroyed
+     * ---------------------------------------------------------------- */
+
+    public function test_google_sign_in_proceeds_despite_a_pending_registration_and_leaves_it_untouched(): void
     {
         PendingRegistration::create([
             'name' => 'Pending Person',
@@ -228,14 +261,22 @@ class GoogleLoginTest extends TestCase
 
         Socialite::fake('google', $this->googleAccount('pending.person@gmail.com', 'g-pending'));
 
+        // Google-verified identities are NEVER sent through the email
+        // verification flow — straight to the shop as a verified customer.
         $this->get(route('google.callback'))
-            ->assertRedirect(route('registration.pending'))
-            ->assertSessionHas('pending_email', 'pending.person@gmail.com')
-            ->assertSessionHas('status');
+            ->assertRedirect(route('home'));
 
-        $this->assertGuest();
+        $this->assertAuthenticated();
+
+        $user = User::where('email', 'pending.person@gmail.com')->firstOrFail();
+        $this->assertSame(User::ROLE_CUSTOMER, $user->role);
+        $this->assertSame('g-pending', $user->google_id);
+        $this->assertNotNull($user->email_verified_at);
+
+        // The pending row is left untouched (its emailed link still works
+        // and resolves through the existing-account branch — no duplicate).
         $this->assertSame(1, PendingRegistration::count());
-        $this->assertSame(0, User::where('email', 'pending.person@gmail.com')->count());
+        $this->assertSame(1, User::where('email', 'pending.person@gmail.com')->count());
     }
 
     /* ------------------------------------------------------------------
