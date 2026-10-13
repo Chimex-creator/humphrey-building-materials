@@ -75,10 +75,22 @@
                 <a href="{{ route('admin.returns.create') }}" class="btn btn-navy">Record Return</a>
             </div>
         @else
+            {{-- PHASE 15 — bulk review / approve / reject; only eligible rows
+                 move, the rest are skipped with reasons. --}}
+            <form action="{{ route('admin.returns.bulk') }}" method="POST" id="bulk-returns-form"
+                  class="filter-row" style="margin-bottom: 12px;">
+                @csrf
+                <span class="empty-inline">Bulk — <strong id="bulk-count">0</strong> selected:</span>
+                <button type="submit" name="action" value="review" class="btn btn-sm btn-outline-dark">Start Review</button>
+                <button type="submit" name="action" value="approve" class="btn btn-sm btn-navy">Approve</button>
+                <button type="submit" name="action" value="decline" class="btn btn-sm btn-danger">Reject</button>
+            </form>
+
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="bulk-select-all" aria-label="Select all returns"></th>
                             <th>Date / Time</th>
                             <th>Product</th>
                             <th>Qty</th>
@@ -91,6 +103,11 @@
                     <tbody>
                         @foreach ($returns as $return)
                             <tr>
+                                <td>
+                                    <input type="checkbox" class="bulk-row" name="return_ids[]"
+                                           value="{{ $return->id }}" form="bulk-returns-form"
+                                           aria-label="Select return of {{ $return->product->name ?? 'item' }}">
+                                </td>
                                 <td>{{ $return->created_at->format('d M Y, H:i') }}</td>
                                 <td>
                                     <strong>{{ $return->product->name ?? '— (product removed)' }}</strong><br>
@@ -234,3 +251,43 @@
         @endif
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        var selectAll = document.getElementById('bulk-select-all');
+        if (!selectAll) return;
+
+        var rows = Array.prototype.slice.call(document.querySelectorAll('.bulk-row'));
+        var counter = document.getElementById('bulk-count');
+        var form = document.getElementById('bulk-returns-form');
+
+        function refresh() {
+            var count = rows.filter(function (r) { return r.checked; }).length;
+            if (counter) counter.textContent = String(count);
+        }
+
+        selectAll.addEventListener('change', function () {
+            rows.forEach(function (r) { r.checked = selectAll.checked; });
+            refresh();
+        });
+        rows.forEach(function (r) { r.addEventListener('change', refresh); });
+
+        if (form) {
+            form.addEventListener('submit', function (event) {
+                var picked = rows.filter(function (r) { return r.checked; }).length;
+                if (picked === 0) {
+                    event.preventDefault();
+                    showToast('Select at least one return first.', 'error');
+                    return;
+                }
+                var action = event.submitter && event.submitter.value;
+                var verb = action === 'approve' ? 'approve' : (action === 'decline' ? 'reject' : 'start reviewing');
+                if (!confirm('Are you sure you want to ' + verb + ' ' + picked + ' selected return(s)? Ineligible rows will be skipped.')) {
+                    event.preventDefault();
+                }
+            });
+        }
+    })();
+</script>
+@endpush

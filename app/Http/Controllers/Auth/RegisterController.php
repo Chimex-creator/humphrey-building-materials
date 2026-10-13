@@ -202,9 +202,10 @@ class RegisterController extends Controller
         if ($result instanceof User) {
             Auth::login($result);
 
+            // PHASE 2 — first-time greeting, shown once via the flash toast.
             return redirect()
                 ->route('home')
-                ->with('status', 'Your email has been verified — welcome, '.$result->name.'!');
+                ->with('status', 'Welcome, '.$result->name.'!');
         }
 
         if ($result === 'existing') {

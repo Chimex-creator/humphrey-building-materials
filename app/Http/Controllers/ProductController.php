@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BusinessContact;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Setting;
@@ -126,7 +127,9 @@ class ProductController extends Controller
             ->get();
 
         // Contact details from Business Settings (not hardcoded).
-        $phone = Setting::get('business_phone', '+2348153667923');
+        // PHASE 5 — "Call to Order" dials the admin-selected contact's
+        // number, falling back to the owner business_phone setting.
+        $phone = BusinessContact::callToOrderPhone();
         $email = Setting::get('business_email', 'humphreybuildingmaterials@gmail.com');
 
         return view('products.show', compact('product', 'related', 'phone', 'email'));

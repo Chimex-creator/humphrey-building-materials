@@ -46,6 +46,15 @@
                         </button>
                     @endif
                 </form>
+
+                {{-- PHASE 9 — the only admin path back into a customer account. --}}
+                <form action="{{ route('admin.users.send-reset', $customer) }}" method="POST" style="margin-top: 8px;">
+                    @csrf
+                    <button type="submit" class="btn btn-navy"
+                            onclick="return confirm('Send a password reset link to {{ $customer->email }}?');">
+                        📧 Send Password Reset Link
+                    </button>
+                </form>
             @endif
         </div>
     </div>

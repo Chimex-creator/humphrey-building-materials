@@ -18,9 +18,19 @@
                 <input type="text" id="name" name="name" value="{{ old('name', $category->name) }}" required maxlength="100"
                        class="{{ $errors->has('name') ? 'is-invalid' : '' }}">
                 @error('name')<span class="field-error">{{ $message }}</span>@enderror
-                @if ($category->name !== old('name', $category->name))
-                    <small class="field-help">Changing the name will also update the URL slug.</small>
-                @endif
+            </div>
+
+            {{-- PHASE 11 — the slug is editable; it only changes when you change it. --}}
+            <div class="form-group">
+                <label for="slug">URL Slug <span class="req">*</span></label>
+                <input type="text" id="slug" name="slug"
+                       value="{{ old('slug', $category->slug) }}" required maxlength="120"
+                       class="{{ $errors->has('slug') ? 'is-invalid' : '' }}">
+                @error('slug')<span class="field-error">{{ $message }}</span>@enderror
+                <small class="field-help">
+                    Letters, numbers, dashes and underscores only. Changing this changes the
+                    category&rsquo;s web address — old links to the previous slug will stop working.
+                </small>
             </div>
 
             <div class="form-group">
@@ -28,11 +38,6 @@
                 <textarea id="description" name="description" rows="3" maxlength="500"
                           class="{{ $errors->has('description') ? 'is-invalid' : '' }}">{{ old('description', $category->description) }}</textarea>
                 @error('description')<span class="field-error">{{ $message }}</span>@enderror
-            </div>
-
-            <div class="form-group">
-                <label>Current Slug</label>
-                <input type="text" value="{{ $category->slug }}" readonly class="readonly">
             </div>
 
             <div class="form-actions">

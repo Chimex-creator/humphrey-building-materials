@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Notifications\PasswordChanged;
 use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Password;
@@ -89,7 +88,7 @@ class UserController extends Controller
         return view('admin.users.edit', compact('user', 'roles'));
     }
 
-    /** Update a user (name, email, role, active status, optional password). */
+    /** Update a user (name, email, role, active status). */
     public function update(Request $request, User $user, ActivityLogger $logger)
     {
         $data = $request->validate([
@@ -98,22 +97,29 @@ class UserController extends Controller
             'role' => ['required', Rule::in(array_keys(User::ROLES))],
             'phone' => ['nullable', 'string', 'max:30'],
             'is_active' => ['nullable', 'boolean'],
-            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
         ]);
 
-        // Final Spec §29 — admins must NEVER set or view a customer's
-        // password. Staff passwords are still admin-manageable; customers
-        // recover access only through the secure reset-link process.
-        $passwordChanged = ! empty($data['password']);
-        if ($passwordChanged && $user->role === User::ROLE_CUSTOMER) {
-            return back()->withErrors([
-                'password' => 'Admins cannot set a customer\'s password — send a password reset link instead.',
-            ]);
+        // PHASE 9 — customer identity (name / email / phone) is never
+        // admin-editable: personal-detail corrections go through the
+        // customer, and access recovery goes through the reset-link flow.
+        // Role and account status remain admin-managed.
+        if ($user->role === User::ROLE_CUSTOMER) {
+            $identityChanged = $data['name'] !== $user->name
+                || $data['email'] !== $user->email
+                || (string) ($data['phone'] ?? '') !== (string) ($user->phone ?? '');
+
+            if ($identityChanged) {
+                return back()->withErrors([
+                    'name' => 'Customer personal details (name, email, phone) cannot be changed here — '
+                        .'manage only the role and account status. Use the password reset link for access recovery.',
+                ]);
+            }
         }
 
         // PHASE 12 — remember the sensitive values so the change can be logged.
         $previousRole = $user->role;
         $previousActive = (bool) $user->is_active;
+        $previousEmail = $user->email;
 
         // Safety: admin cannot demote or deactivate themselves.
         if ($user->id === auth()->id()) {
@@ -125,22 +131,50 @@ class UserController extends Controller
             }
         }
 
+        // PHASE 1 — the system must never be left without an accessible
+        // administrator. No account is silently promoted; the change is
+        // simply refused until another active admin exists.
+        $otherActiveAdmins = fn (): int => User::where('role', User::ROLE_ADMIN)
+            ->where('is_active', true)
+            ->where('id', '!=', $user->id)
+            ->count();
+
+        if ($user->role === User::ROLE_ADMIN
+            && $data['role'] !== User::ROLE_ADMIN
+            && $otherActiveAdmins() === 0) {
+            return back()->withErrors([
+                'role' => 'This is the last active administrator — make another account an admin first.',
+            ]);
+        }
+
+        if ($user->role === User::ROLE_ADMIN
+            && $user->is_active
+            && ! $request->boolean('is_active')
+            && $otherActiveAdmins() === 0) {
+            return back()->withErrors([
+                'is_active' => 'This is the last active administrator — reactivate or promote another admin first.',
+            ]);
+        }
+
         $user->name = $data['name'];
         $user->email = $data['email'];
         $user->role = $data['role'];
         $user->phone = $data['phone'] ?? null;
         $user->is_active = $request->boolean('is_active');
 
-        // Only update password if one was typed.
-        if ($passwordChanged) {
-            $user->password = $data['password'];
-        }
-
         $user->save();
 
-        // Security event → in-app + email (critical list).
-        if ($passwordChanged) {
-            $user->notify(new PasswordChanged('admin'));
+        // PHASE 9 — a staff email change is an identity change: audit it.
+        if ($previousEmail !== $user->email) {
+            $logger->log('user.email_changed', $user, sprintf(
+                'Email of %s changed from %s to %s.',
+                $user->name,
+                $previousEmail,
+                $user->email
+            ), [
+                'from_email' => $previousEmail,
+                'to_email' => $user->email,
+            ]);
         }
 
         // PHASE 12 — role changes and deactivations are sensitive (Master §47).
@@ -221,16 +255,12 @@ class UserController extends Controller
     }
 
     /**
-     * Final Spec §29 — the ONLY way an admin helps a customer back into
-     * their account: send Laravel's one-time, expiring, secure reset link.
-     * The existing password is never revealed and never set directly.
+     * Final Spec §29 / PHASE 9 — the ONLY way an admin recovers access for
+     * ANY account (customer or staff): Laravel's one-time, expiring, secure
+     * reset link. Existing passwords are never revealed or set directly.
      */
     public function sendResetLink(User $user, ActivityLogger $logger)
     {
-        if ($user->role !== User::ROLE_CUSTOMER) {
-            return back()->with('error', 'Password reset links are for customer accounts — edit staff passwords on their edit screen.');
-        }
-
         if (! $user->is_active) {
             return back()->with('error', 'This account is deactivated — reactivate it before sending a reset link.');
         }

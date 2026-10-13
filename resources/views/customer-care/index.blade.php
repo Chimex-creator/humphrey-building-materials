@@ -52,7 +52,10 @@
                     member of staff is assigned to it. We will update you here and by email.
                 </p>
 
-                <form action="{{ route('support.store') }}" method="POST" novalidate>
+                {{-- The button is disabled on submit so an accidental second
+                     click cannot send the same message twice. --}}
+                <form action="{{ route('support.store') }}" method="POST" novalidate
+                      onsubmit="var send=this.querySelector('[type=submit]'); if(send) send.disabled=true;">
                     @csrf
 
                     <div class="form-group">

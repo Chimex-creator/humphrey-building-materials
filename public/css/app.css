@@ -1390,6 +1390,70 @@ ul {
     border-bottom: 1px solid #fca5a5;
 }
 
+/* Customer care — submission confirmation panel (persistent, one-time) */
+.submission-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    border-left: 4px solid var(--success);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: #14532d;
+    padding: 20px 22px;
+}
+
+.submission-confirm-mark {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--success);
+    color: #fff;
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 34px;
+    text-align: center;
+}
+
+.submission-confirm-body h2 {
+    font-size: 1.12rem;
+    color: #14532d;
+    margin-bottom: 6px;
+}
+
+.submission-confirm-body p {
+    margin: 0 0 8px;
+}
+
+.submission-confirm-body p:last-child {
+    margin-bottom: 0;
+}
+
+.submission-confirm-ref {
+    font-size: 0.95rem;
+}
+
+.submission-confirm-ref strong {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid #86efac;
+    border-radius: 6px;
+    padding: 1px 8px;
+    color: var(--navy-dark);
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    letter-spacing: 0.02em;
+}
+
+@media (max-width: 520px) {
+    .submission-confirm {
+        flex-direction: column;
+        gap: 10px;
+        padding: 16px;
+    }
+}
+
 /* Header auth buttons */
 .nav-cta {
     background: var(--amber) !important;
@@ -2433,6 +2497,65 @@ ul {
 .btn-block {
     display: block;
     width: 100%;
+}
+
+/* "Continue with Google" — the familiar Google sign-in look: white surface,
+   hairline grey border, multicoloured G logo set beside the label. */
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #fff;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    color: #3c4043;
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.2;
+    padding: 11px 20px;
+    transition: background var(--transition), border-color var(--transition),
+        box-shadow var(--transition), color var(--transition);
+}
+
+.btn-google .google-g {
+    flex: 0 0 auto;
+    display: block;
+    width: 18px;
+    height: 18px;
+}
+
+.btn-google:hover {
+    background: #f8f9fa;
+    border-color: #c6c6c6;
+    box-shadow: 0 1px 2px rgba(60, 64, 67, 0.18);
+    color: #202124;
+    transform: none;
+}
+
+.btn-google:active {
+    background: #f1f3f4;
+    border-color: #babfc2;
+    box-shadow: none;
+    transform: none;
+}
+
+.btn-google:focus-visible {
+    outline: 2px solid var(--navy);
+    outline-offset: 2px;
+    box-shadow: 0 1px 2px rgba(60, 64, 67, 0.18);
+}
+
+.btn-google:disabled,
+.btn-google[aria-disabled="true"] {
+    background: #fff;
+    border-color: #dadce0;
+    box-shadow: none;
+    color: #9aa0a6;
+    cursor: not-allowed;
+    opacity: 0.7;
+    pointer-events: none;
+    transform: none;
 }
 
 .summary-note {
@@ -3767,4 +3890,57 @@ ul {
 
 .pw-toggle.is-visible .pw-eye-off {
     display: block;
+}
+
+/* ==========================================================================
+   PHASE 17 — mobile comfort additions (appended; desktop rules untouched)
+   The layout already stacks via the 1024/768/520 breakpoints, tables scroll
+   inside .table-wrap, and the hero clips its decorations. These rules only
+   improve tap size, iOS input zoom and dense-table legibility on phones.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    /* Comfortable tap targets without changing the desktop look. */
+    .btn {
+        min-height: 44px;
+    }
+
+    .btn-sm {
+        min-height: 38px;
+        padding: 8px 14px;
+    }
+
+    /* Stop iOS Safari from zooming into focused form fields (16px floor). */
+    input,
+    select,
+    textarea,
+    .filter-input,
+    .filter-select {
+        font-size: 16px;
+    }
+
+    /* Keep dense admin tables legible — scroll rather than crush columns
+     * (the added bulk-select checkbox column makes tables wider). */
+    .admin-table {
+        min-width: 560px;
+    }
+
+    .table-wrap {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Product-page actions become full-width stacked buttons. */
+    .detail-actions .btn {
+        flex: 1 1 100%;
+    }
+}
+
+@media (max-width: 520px) {
+    .stats-grid .stat-card {
+        padding: 12px;
+    }
+
+    .form-row-2 {
+        gap: 12px;
+    }
 }

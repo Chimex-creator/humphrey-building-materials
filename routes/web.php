@@ -222,6 +222,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified'])->group(
     Route::middleware('role:admin')->group(function () {
         Route::get('/contacts', [BusinessContactController::class, 'index'])->name('contacts.index');
         Route::post('/contacts/bulk', [BusinessContactController::class, 'bulk'])->name('contacts.bulk');
+        // PHASE 5 — which contact's number the product page "Call to Order" dials.
+        Route::patch('/contacts/call-to-order', [BusinessContactController::class, 'setCallToOrder'])
+            ->name('contacts.call-to-order');
         Route::get('/contacts/create', [BusinessContactController::class, 'create'])->name('contacts.create');
         Route::post('/contacts', [BusinessContactController::class, 'store'])->name('contacts.store');
         Route::get('/contacts/{contact}/edit', [BusinessContactController::class, 'edit'])->name('contacts.edit');
@@ -295,6 +298,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified'])->group(
     // Categories — admin + inventory
     Route::middleware('role:admin,inventory')->group(function () {
         Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
+        // PHASE 11 — bulk delete (safe rows only; respects the product guard).
+        Route::post('/categories/bulk', [CategoryController::class, 'bulk'])->name('categories.bulk');
         Route::get('/categories/create', [CategoryController::class, 'create'])->name('categories.create');
         Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
         Route::get('/categories/{category}/edit', [CategoryController::class, 'edit'])->name('categories.edit');
@@ -339,6 +344,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified'])->group(
     */
     Route::middleware('role:admin,inventory,sales')->group(function () {
         Route::get('/returns', [ReturnController::class, 'index'])->name('returns.index');
+        // PHASE 15 — bulk review / approve / reject (same guards as singles).
+        Route::post('/returns/bulk', [ReturnController::class, 'bulk'])->name('returns.bulk');
         Route::get('/returns/create', [ReturnController::class, 'create'])->name('returns.create');
         Route::post('/returns', [ReturnController::class, 'store'])->name('returns.store');
         Route::post('/returns/{return}/review', [ReturnController::class, 'review'])->name('returns.review');
@@ -352,6 +359,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified'])->group(
     // PHASE 7 — Orders — admin + sales
     Route::middleware('role:admin,sales')->group(function () {
         Route::get('/orders', [AdminOrderController::class, 'index'])->name('orders.index');
+        // PHASE 12 — bulk status changes (same state machine as singles).
+        Route::patch('/orders/bulk', [AdminOrderController::class, 'bulk'])->name('orders.bulk');
         Route::get('/orders/{order}', [AdminOrderController::class, 'show'])->name('orders.show');
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('orders.status');
         Route::post('/orders/{order}/delivery-fee', [AdminOrderController::class, 'confirmDeliveryFee'])->name('orders.delivery-fee');
@@ -368,6 +377,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified'])->group(
     */
     Route::middleware('role:admin,sales')->group(function () {
         Route::get('/deliveries', [DeliveryController::class, 'index'])->name('deliveries.index');
+        // PHASE 13 — bulk status updates (registered before {delivery} so
+        // "bulk" is never captured as a delivery id).
+        Route::patch('/deliveries/bulk', [DeliveryController::class, 'bulk'])->name('deliveries.bulk');
         Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show'])->name('deliveries.show');
         Route::patch('/deliveries/{delivery}', [DeliveryController::class, 'update'])->name('deliveries.update');
     });
@@ -435,6 +447,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'verified'])->group(
     */
     Route::middleware('role:admin,sales')->group(function () {
         Route::get('/support', [SupportController::class, 'index'])->name('support.index');
+        // PHASE 16 — bulk In Progress / Resolve (before {ticket} binding).
+        Route::patch('/support/bulk', [SupportController::class, 'bulk'])->name('support.bulk');
         Route::get('/support/{ticket}', [SupportController::class, 'show'])->name('support.show');
         Route::patch('/support/{ticket}', [SupportController::class, 'update'])->name('support.update');
     });

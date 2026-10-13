@@ -19,10 +19,19 @@
                 <a href="{{ route('admin.categories.create') }}" class="btn btn-navy">Add Category</a>
             </div>
         @else
+            {{-- PHASE 11 — bulk delete (categories have no activation state). --}}
+            <form action="{{ route('admin.categories.bulk') }}" method="POST" id="bulk-categories-form"
+                  class="filter-row" style="margin-bottom: 12px;">
+                @csrf
+                <span class="empty-inline">Bulk actions — <strong id="bulk-count">0</strong> selected:</span>
+                <button type="submit" name="action" value="delete" class="btn btn-sm btn-danger">Delete selected (empty only)</button>
+            </form>
+
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="bulk-select-all" aria-label="Select all categories"></th>
                             <th>Name</th>
                             <th>Slug</th>
                             <th>Description</th>
@@ -33,6 +42,11 @@
                     <tbody>
                         @foreach ($categories as $category)
                             <tr>
+                                <td>
+                                    <input type="checkbox" class="bulk-row" name="category_ids[]"
+                                           value="{{ $category->id }}" form="bulk-categories-form"
+                                           aria-label="Select {{ $category->name }}">
+                                </td>
                                 <td><strong>{{ $category->name }}</strong></td>
                                 <td><code>{{ $category->slug }}</code></td>
                                 <td>
@@ -54,8 +68,13 @@
                                           onsubmit="return confirm('Delete category &ldquo;{{ $category->name }}&rdquo;?');">
                                         @csrf
                                         @method('DELETE')
+                                        {{-- PHASE 11 — deletion is blocked while products still use
+                                             this category (the FK would cascade-delete them). --}}
                                         <button type="submit" class="btn btn-sm btn-danger"
-                                                {{ $category->products_count > 0 ? 'disabled title="Has products"' : '' }}>
+                                                @if ($category->products_count > 0)
+                                                    disabled
+                                                    title="Has {{ $category->products_count }} product(s) — move or delete them first"
+                                                @endif>
                                             Delete
                                         </button>
                                     </form>
@@ -82,3 +101,41 @@
         @endif
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        var selectAll = document.getElementById('bulk-select-all');
+        if (!selectAll) return;
+
+        var rows = Array.prototype.slice.call(document.querySelectorAll('.bulk-row'));
+        var counter = document.getElementById('bulk-count');
+        var form = document.getElementById('bulk-categories-form');
+
+        function refresh() {
+            var count = rows.filter(function (r) { return r.checked; }).length;
+            if (counter) counter.textContent = String(count);
+        }
+
+        selectAll.addEventListener('change', function () {
+            rows.forEach(function (r) { r.checked = selectAll.checked; });
+            refresh();
+        });
+        rows.forEach(function (r) { r.addEventListener('change', refresh); });
+
+        if (form) {
+            form.addEventListener('submit', function (event) {
+                var picked = rows.filter(function (r) { return r.checked; }).length;
+                if (picked === 0) {
+                    event.preventDefault();
+                    showToast('Select at least one category first.', 'error');
+                    return;
+                }
+                if (!confirm('Permanently delete ' + picked + ' selected empty categor' + (picked === 1 ? 'y?' : 'ies?'))) {
+                    event.preventDefault();
+                }
+            });
+        }
+    })();
+</script>
+@endpush

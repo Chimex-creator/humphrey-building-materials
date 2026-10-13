@@ -54,7 +54,8 @@ class CheckoutController extends Controller
 
                 return [
                     'id' => $state->id,
-                    'name' => $state->name,
+                    // Public label only — the stored name and every id stay as they are.
+                    'name' => \App\Support\StateLabels::label($state->name),
                     'uses_zones' => (bool) $state->uses_zones,
                     'fee' => $state->uses_zones
                         ? null // never show the state-level price for FCT/Nasarawa (§13)

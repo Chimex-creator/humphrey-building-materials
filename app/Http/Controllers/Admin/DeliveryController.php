@@ -110,6 +110,8 @@ class DeliveryController extends Controller
             'status' => ['required', Rule::in(array_keys(Delivery::STATUSES))],
             'confirmed_date' => ['nullable', 'date'],
             'assigned_to' => ['nullable', 'integer', 'exists:users,id'],
+            // PHASE 6 — optional free-text name (external couriers welcome).
+            'assigned_name' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'failure_reason' => ['nullable', Rule::in(array_keys(Delivery::FAILURE_REASONS))],
             'failure_note' => ['nullable', 'string', 'max:500'],
@@ -145,10 +147,27 @@ class DeliveryController extends Controller
         $dateChanged = ($data['confirmed_date'] ?? null) !== $previousDate;
         $becomingDelivered = $data['status'] === 'delivered' && $delivery->delivered_at === null;
 
+        // PHASE 6 — assignment is EITHER a staff account OR a free-text
+        // name (dropdown wins when both are filled; neither clears both).
+        $staffId = ($data['assigned_to'] ?? null) ?: null;
+        $freeName = trim((string) ($data['assigned_name'] ?? ''));
+
+        if ($staffId !== null) {
+            $assignedTo = (int) $staffId;
+            $assignedName = null;
+        } elseif ($freeName !== '') {
+            $assignedTo = null;
+            $assignedName = $freeName;
+        } else {
+            $assignedTo = null;
+            $assignedName = null;
+        }
+
         $delivery->fill([
             'status' => $data['status'],
             'confirmed_date' => ($data['confirmed_date'] ?? null) ?: null,
-            'assigned_to' => ($data['assigned_to'] ?? null) ?: null,
+            'assigned_to' => $assignedTo,
+            'assigned_name' => $assignedName,
             'notes' => $data['notes'] ?? null,
             'failure_reason' => $data['status'] === 'failed'
                 ? ($data['failure_reason'] ?? $delivery->failure_reason)
@@ -229,6 +248,111 @@ class DeliveryController extends Controller
         return redirect()
             ->route('admin.deliveries.show', $delivery)
             ->with('status', $message);
+    }
+
+    /**
+     * PHASE 13 — bulk status updates. The same per-record rules as the
+     * single form apply: "delivered" needs a received-by name (one name is
+     * applied to the whole batch), "failed" is refused here because it
+     * requires a per-delivery reason — use the individual page for that.
+     * Order mirroring (Phase 14) runs per record through mirrorOrderStatus.
+     */
+    public function bulk(Request $request, ActivityLogger $logger)
+    {
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['pending', 'confirmed', 'out_for_delivery', 'delivered'])],
+            'received_by' => ['nullable', 'string', 'max:100'],
+            'delivery_ids' => ['required', 'array', 'min:1'],
+            'delivery_ids.*' => ['integer', 'exists:deliveries,id'],
+        ]);
+
+        $next = $data['status'];
+
+        if ($next === 'delivered' && trim((string) ($data['received_by'] ?? '')) === '') {
+            return back()->withErrors([
+                'received_by' => 'Who received the batch? Enter a name for the confirmation record.',
+            ]);
+        }
+
+        $deliveries = Delivery::with('order.user')
+            ->whereIn('id', $data['delivery_ids'])
+            ->get();
+
+        $changed = 0;
+        $skipped = [];
+        $orderNotes = [];
+
+        foreach ($deliveries as $delivery) {
+            $label = $delivery->order?->order_number ?? ('#'.$delivery->id);
+
+            if ($next === 'failed') {
+                $skipped[] = $label.': failed needs a reason — use the delivery page.';
+
+                continue;
+            }
+
+            $previousStatus = $delivery->status;
+            $becomingDelivered = $next === 'delivered' && $delivery->delivered_at === null;
+
+            $delivery->fill([
+                'status' => $next,
+                'delivered_at' => $becomingDelivered ? now() : $delivery->delivered_at,
+                'received_by' => $next === 'delivered'
+                    ? trim((string) $data['received_by'])
+                    : $delivery->received_by,
+            ]);
+            $delivery->save();
+
+            if ($previousStatus !== $delivery->status) {
+                $logger->log('delivery.status_changed', $delivery, sprintf(
+                    'Delivery %s for %s went "%s" → "%s" (bulk).',
+                    $delivery->id,
+                    $label,
+                    Delivery::STATUSES[$previousStatus] ?? $previousStatus,
+                    $delivery->statusLabel()
+                ), [
+                    'from_status' => $previousStatus,
+                    'to_status' => $delivery->status,
+                    'via' => 'bulk',
+                ]);
+                $changed++;
+            } else {
+                $skipped[] = $label.': already "'.$delivery->statusLabel().'".';
+            }
+
+            $note = $this->mirrorOrderStatus($delivery, $previousStatus);
+            if ($note !== null) {
+                $orderNotes[] = $label.': '.$note;
+            }
+        }
+
+        $label = Delivery::STATUSES[$next] ?? $next;
+
+        if ($changed > 0) {
+            $logger->log('deliveries.bulk_status', null, sprintf(
+                '%d delivery record(s) moved to "%s" in one bulk action.',
+                $changed,
+                $label
+            ), [
+                'count' => $changed,
+                'to_status' => $next,
+            ]);
+        }
+
+        $message = $changed > 0
+            ? $changed.' delivery record(s) moved to "'.$label.'".'
+            : 'No deliveries were changed.';
+
+        if ($skipped !== []) {
+            $message .= ' Skipped '.count($skipped).': '.implode(' | ', array_slice($skipped, 0, 5))
+                .(count($skipped) > 5 ? ' …' : '');
+        }
+
+        if ($orderNotes !== []) {
+            $message .= ' Order notes: '.implode(' | ', array_slice($orderNotes, 0, 3));
+        }
+
+        return back()->with($changed > 0 ? 'status' : 'error', $message);
     }
 
     /* ------------------------------------------------------------

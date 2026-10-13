@@ -177,7 +177,7 @@
             </div>
 
             <div class="form-group">
-                <label for="assigned_to">Taking This Delivery</label>
+                <label for="assigned_to">Taking This Delivery — staff account <span class="optional">(optional)</span></label>
                 <select name="assigned_to" id="assigned_to">
                     <option value="">— Nobody assigned yet —</option>
                     @foreach ($staff as $person)
@@ -186,6 +186,20 @@
                         </option>
                     @endforeach
                 </select>
+            </div>
+
+            {{-- PHASE 6 — free-text name for external couriers / anyone without
+                 an account. Staff dropdown above wins if both are filled. --}}
+            <div class="form-group">
+                <label for="assigned_name">Taking This Delivery — name (free text) <span class="optional">(optional)</span></label>
+                <input type="text" name="assigned_name" id="assigned_name" maxlength="100"
+                       placeholder="e.g. Musa (external courier) — no website account needed"
+                       value="{{ old('assigned_name', $delivery->assigned_name) }}">
+                <small class="field-help">
+                    Use this for anyone without a staff login (neighbour, external courier...).
+                    If a staff account is selected above, that name is used instead.
+                </small>
+                @error('assigned_name')<span class="field-error">{{ $message }}</span>@enderror
             </div>
 
             <div class="form-group">

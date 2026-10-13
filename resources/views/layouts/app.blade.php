@@ -16,8 +16,10 @@
     {{-- Flash messages: one-time after a form submit. Without JS they render
          as static bars; with JS they become temporary auto-dismissing toasts
          (js/app.js reads the data-* attributes once and removes the carrier,
-         so a refresh never replays an old message). --}}
-    @if (session('status') || session('error'))
+         so a refresh never replays an old message). The customer-care
+         confirmation is a full panel on the page itself, so its duplicate
+         one-line echo is not shown as a toast as well. --}}
+    @if ((session('status') || session('error')) && ! session('submission'))
         <div id="flash-data"
              data-status="{{ session('status') }}"
              data-error="{{ session('error') }}">

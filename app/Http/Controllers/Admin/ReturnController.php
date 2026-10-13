@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductReturn;
 use App\Notifications\ReturnStatusUpdated;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -270,5 +271,100 @@ class ReturnController extends Controller
 
             $return->forceFill(['restocked_at' => now(), 'status' => 'completed'])->save();
         });
+    }
+
+    /**
+     * PHASE 15 — bulk review / approve / reject. Only records eligible for
+     * the requested transition are processed (same guards as the single
+     * actions); the rest are skipped and reported. No stage is skipped and
+     * no completed return ever moves backwards.
+     */
+    public function bulk(Request $request, ActivityLogger $logger)
+    {
+        $data = $request->validate([
+            'action' => ['required', Rule::in(['review', 'approve', 'decline'])],
+            'return_ids' => ['required', 'array', 'min:1'],
+            'return_ids.*' => ['integer', 'exists:returns,id'],
+        ]);
+
+        $returns = ProductReturn::with('product', 'order.user')
+            ->whereIn('id', $data['return_ids'])
+            ->get();
+
+        $changed = 0;
+        $skipped = [];
+
+        foreach ($returns as $return) {
+            $label = ($return->product?->name ?? 'item').' ×'.$return->quantity;
+
+            switch ($data['action']) {
+                case 'review':
+                    if (! $return->isPending()) {
+                        $skipped[] = $label.': not awaiting review.';
+
+                        continue 2;
+                    }
+                    $return->update(['status' => 'in_review']);
+                    break;
+
+                case 'approve':
+                    if (! $return->needsReview()) {
+                        $skipped[] = $label.': already reviewed.';
+
+                        continue 2;
+                    }
+                    $return->update([
+                        'status' => 'approved',
+                        'reviewed_by' => auth()->id(),
+                        'reviewed_at' => now(),
+                    ]);
+                    $return->order?->user?->notify(new ReturnStatusUpdated($return));
+                    break;
+
+                case 'decline':
+                    if (! $return->needsReview()) {
+                        $skipped[] = $label.': already reviewed.';
+
+                        continue 2;
+                    }
+                    $return->update([
+                        'status' => 'rejected',
+                        'reviewed_by' => auth()->id(),
+                        'reviewed_at' => now(),
+                    ]);
+                    $return->order?->user?->notify(new ReturnStatusUpdated($return));
+                    break;
+            }
+
+            $changed++;
+        }
+
+        $actionLabels = [
+            'review' => 'In Review',
+            'approve' => 'Approved',
+            'decline' => 'Rejected',
+        ];
+
+        if ($changed > 0) {
+            $logger->log('returns.bulk_'.$data['action'], null, sprintf(
+                '%d return(s) moved to "%s" in one bulk action.',
+                $changed,
+                $actionLabels[$data['action']]
+            ), [
+                'count' => $changed,
+                'action' => $data['action'],
+            ]);
+        }
+
+        $message = $changed > 0
+            ? $changed.' return(s) marked as '.$actionLabels[$data['action']].'.'
+            : 'No returns were changed.';
+
+        if ($skipped !== []) {
+            $message .= ' Skipped '.count($skipped).': '.implode(' | ', array_slice($skipped, 0, 5))
+                .(count($skipped) > 5 ? ' …' : '');
+        }
+
+        return back()->with($changed > 0 ? 'status' : 'error', $message);
     }
 }

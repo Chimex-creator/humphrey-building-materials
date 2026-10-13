@@ -137,19 +137,21 @@
                                         @foreach ($states as $state)
                                             <option value="{{ $state['id'] }}"
                                                     data-fee="{{ $state['fee'] }}"
+                                                    data-zones="{{ $state['uses_zones'] ? '1' : '0' }}"
                                                     {{ (string) old('delivery_state_id') === (string) $state['id'] ? 'selected' : '' }}>
                                                 {{ $state['name'] }}
                                             </option>
                                         @endforeach
                                     </select>
                                     @error('delivery_state_id')<span class="field-error">{{ $message }}</span>@enderror
+                                    <span class="field-help">Pick your state first — the area list unlocks after that.</span>
                                 </div>
 
                                 <div class="form-group">
-                                    <label for="delivery_area_id">Area <span class="optional">(optional)</span></label>
-                                    <select id="delivery_area_id" name="delivery_area_id"
+                                    <label for="delivery_area_id">Area <span class="req" data-area-req hidden>*</span></label>
+                                    <select id="delivery_area_id" name="delivery_area_id" disabled
                                             class="{{ $errors->has('delivery_area_id') ? 'is-invalid' : '' }}">
-                                        <option value="">Choose an area...</option>
+                                        <option value="">Choose a state first...</option>
                                         @foreach ($states as $state)
                                             @foreach ($state['areas'] as $area)
                                                 <option value="{{ $area['id'] }}"
@@ -163,8 +165,8 @@
                                         @endforeach
                                     </select>
                                     @error('delivery_area_id')<span class="field-error">{{ $message }}</span>@enderror
-                                    <span class="field-help">
-                                        Required for FCT and Nasarawa deliveries — pick your town/area for the exact rate (e.g. Mararaba or Nyanya).
+                                    <span class="field-help" id="areaHelp">
+                                        Required for Abuja (FCT) and Nasarawa deliveries — pick your town/area for the exact rate (e.g. Mararaba or Nyanya).
                                     </span>
                                 </div>
                             </div>
@@ -278,6 +280,7 @@
         var dateInput = document.getElementById('preferred_delivery_date');
         var stateSelect = document.getElementById('delivery_state_id');
         var areaSelect = document.getElementById('delivery_area_id');
+        var areaReqMark = document.querySelector('[data-area-req]');
         var feeEstimate = document.getElementById('feeEstimate');
         var deliveryCell = document.getElementById('summaryDelivery');
         var totalCell = document.getElementById('summaryTotal');
@@ -293,14 +296,34 @@
             return stateSelect.options[stateSelect.selectedIndex];
         }
 
+        // PHASE 8 — state-first: the area field only unlocks once a valid
+        // state is chosen, and only for zone states (Abuja FCT / Nasarawa).
+        // Changing state clears any area that does not belong to it.
+        function stateUsesZones() {
+            var opt = stateOption();
+            return !!opt && opt.value !== '' && opt.getAttribute('data-zones') === '1';
+        }
+
         function refreshAreas() {
             var stateId = stateSelect.value;
+            var zones = stateUsesZones();
+
+            areaSelect.disabled = !zones;
+            if (areaSelect.options.length > 0) {
+                areaSelect.options[0].text = zones ? 'Choose an area...' : 'Choose a state first...';
+            }
+            areaSelect.required = zones && !!document.querySelector('input[name="delivery_option"]:checked')
+                && document.querySelector('input[name="delivery_option"]:checked').value === DELIVERY;
+            if (areaReqMark) areaReqMark.hidden = !areaSelect.required;
+
             for (var i = 0; i < areaSelect.options.length; i++) {
                 var opt = areaSelect.options[i];
                 if (!opt.value) continue;
                 opt.hidden = stateId !== '' && opt.getAttribute('data-state') !== stateId;
                 if (opt.hidden && opt.selected) areaSelect.value = '';
             }
+            // Non-zone state: an area choice cannot apply — clear it.
+            if (!zones && areaSelect.value) areaSelect.value = '';
         }
 
         function refreshFee() {

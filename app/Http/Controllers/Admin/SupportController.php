@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\ActivityLog;
-use App\Models\Order;
 use App\Models\SupportTicket;
 use App\Notifications\SupportTicketUpdated;
 use App\Services\ActivityLogger;
@@ -114,5 +112,82 @@ class SupportController extends Controller
         return redirect()
             ->route('admin.support.show', $ticket)
             ->with('status', 'Customer care request '.$ticket->reference.' updated.');
+    }
+
+    /**
+     * PHASE 16 — bulk move eligible tickets to In Progress or Resolved.
+     * Same rules as the single form minus the free-text response (bulk has
+     * no response box): open → in_progress, open|in_progress → resolved.
+     * No "Closed" status exists; nothing is resolved automatically.
+     */
+    public function bulk(Request $request, ActivityLogger $logger)
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:start_progress,resolve'],
+            'ticket_ids' => ['required', 'array', 'min:1'],
+            'ticket_ids.*' => ['integer', 'exists:support_tickets,id'],
+        ]);
+
+        $tickets = SupportTicket::with('customer')
+            ->whereIn('id', $data['ticket_ids'])
+            ->get();
+
+        $changed = 0;
+        $skipped = [];
+
+        foreach ($tickets as $ticket) {
+            $previousStatus = $ticket->status;
+
+            if ($data['action'] === 'start_progress') {
+                if ($previousStatus !== 'open') {
+                    $skipped[] = $ticket->reference.': only open tickets can start in progress.';
+
+                    continue;
+                }
+                $ticket->update(['status' => 'in_progress']);
+            } else {
+                if ($previousStatus === 'resolved') {
+                    $skipped[] = $ticket->reference.': already resolved.';
+
+                    continue;
+                }
+                $ticket->update([
+                    'status' => 'resolved',
+                    'resolved_at' => $ticket->resolved_at ?? now(),
+                ]);
+            }
+
+            $logger->log('support.updated', $ticket,
+                'Customer care request '.$ticket->reference.' moved from '
+                .SupportTicket::STATUSES[$previousStatus].' to '.$ticket->statusLabel().' (bulk).',
+                [
+                    'from_status' => $previousStatus,
+                    'to_status' => $ticket->status,
+                    'via' => 'bulk',
+                ]);
+
+            $ticket->customer?->notify(new SupportTicketUpdated($ticket));
+            $changed++;
+        }
+
+        if ($changed > 0) {
+            $logger->log(
+                $data['action'] === 'start_progress' ? 'support.bulk_progress' : 'support.bulk_resolve',
+                null,
+                sprintf('%d support ticket(s) updated in one bulk action.', $changed),
+                ['count' => $changed, 'action' => $data['action']]
+            );
+        }
+
+        $message = $changed > 0
+            ? $changed.' ticket(s) updated.'
+            : 'No tickets were changed.';
+
+        if ($skipped !== []) {
+            $message .= ' Skipped '.count($skipped).': '.implode(' | ', array_slice($skipped, 0, 5))
+                .(count($skipped) > 5 ? ' …' : '');
+        }
+
+        return back()->with($changed > 0 ? 'status' : 'error', $message);
     }
 }

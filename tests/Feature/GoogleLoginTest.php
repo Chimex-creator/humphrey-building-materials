@@ -89,6 +89,54 @@ class GoogleLoginTest extends TestCase
             ->assertRedirect('https://socialite.fake/google/authorize');
     }
 
+    /* ------------------------------------------------------------------
+     | Button appearance (styling only — the flow above is untouched)
+     * ---------------------------------------------------------------- */
+
+    public function test_the_google_button_carries_the_official_multicoloured_g_logo(): void
+    {
+        foreach (['login', 'register'] as $route) {
+            $html = $this->get(route($route))->getContent();
+
+            $this->assertStringContainsString('btn-google', $html, "$route: button is not styled.");
+            $this->assertStringContainsString('<svg', $html, "$route: no Google G logo.");
+            // Google's four brand colours — never a single-colour letter.
+            foreach (['#EA4335', '#4285F4', '#FBBC05', '#34A853'] as $colour) {
+                $this->assertStringContainsString($colour, $html, "$route: missing $colour.");
+            }
+            // Exactly one sign-in button, label beside the logo.
+            $this->assertSame(1, substr_count($html, 'Continue with Google'), "$route: duplicate button.");
+            $this->assertStringContainsString('<span>Continue with Google</span>', $html);
+        }
+    }
+
+    public function test_the_google_button_styling_is_shipped_with_the_site_css(): void
+    {
+        $css = file_get_contents(public_path('css/app.css'));
+
+        foreach (['.btn-google', '.btn-google:hover', '.btn-google:focus-visible',
+            '.btn-google:active', '.btn-google:disabled'] as $selector) {
+            $this->assertStringContainsString($selector, $css, "Missing $selector in app.css.");
+        }
+
+        // White surface, hairline grey border, dark label — the Google look.
+        $this->assertMatchesRegularExpression('/\.btn-google\s*\{[^}]*background:\s*#fff/s', $css);
+        $this->assertMatchesRegularExpression('/\.btn-google\s*\{[^}]*border:\s*1px solid #dadce0/s', $css);
+    }
+
+    public function test_the_google_button_shows_and_hides_with_the_configuration(): void
+    {
+        $this->get(route('login'))
+            ->assertOk()
+            ->assertSee('btn-google', false);
+
+        config()->set('services.google.client_id', null);
+
+        $this->get(route('login'))
+            ->assertOk()
+            ->assertDontSee('btn-google', false);
+    }
+
     public function test_redirect_explains_itself_when_google_is_not_configured(): void
     {
         config()->set('services.google.client_id', null);

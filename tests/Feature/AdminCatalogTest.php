@@ -241,20 +241,53 @@ class AdminCatalogTest extends TestCase
         $admin = $this->staff(User::ROLE_ADMIN);
 
         $this->actingAs($admin)
-            ->post(route('admin.categories.store'), ['name' => 'Roofing Sheets', 'description' => 'Longspan and corrugated.'])
+            ->post(route('admin.categories.store'), [
+                'name' => 'Roofing Sheets',
+                'slug' => 'roofing-sheets',
+                'description' => 'Longspan and corrugated.',
+            ])
             ->assertRedirect(route('admin.categories.index'))
             ->assertSessionHas('status');
         $this->assertDatabaseHas('categories', ['slug' => 'roofing-sheets']);
 
         $category = Category::where('slug', 'roofing-sheets')->firstOrFail();
+
+        // PHASE 11 — renaming without touching the slug keeps the existing
+        // URL (no silent re-slugging of a deliberately chosen address).
         $this->actingAs($admin)
-            ->put(route('admin.categories.update', $category), ['name' => 'Roofing & Ceiling'])
+            ->put(route('admin.categories.update', $category), ['name' => 'Roofing & Ceiling', 'slug' => 'roofing-sheets'])
             ->assertRedirect(route('admin.categories.index'))
             ->assertSessionHas('status');
 
         $category->refresh();
         $this->assertSame('Roofing & Ceiling', $category->name);
-        $this->assertSame('roofing-ceiling', $category->slug);
+        $this->assertSame('roofing-sheets', $category->slug);
+
+        // PHASE 11 — the slug only changes when the admin edits it explicitly.
+        $this->actingAs($admin)
+            ->put(route('admin.categories.update', $category), ['name' => 'Roofing & Ceiling', 'slug' => 'roofing-ceiling'])
+            ->assertRedirect(route('admin.categories.index'))
+            ->assertSessionHas('status');
+
+        $this->assertSame('roofing-ceiling', $category->refresh()->slug);
+    }
+
+    public function test_a_category_slug_must_be_unique_and_well_formed(): void
+    {
+        $admin = $this->staff(User::ROLE_ADMIN);
+        $this->category(['slug' => 'roofing-sheets']);
+
+        $this->actingAs($admin)
+            ->post(route('admin.categories.store'), ['name' => 'Other', 'slug' => 'roofing-sheets'])
+            ->assertSessionHasErrors('slug');
+
+        $this->actingAs($admin)
+            ->post(route('admin.categories.store'), ['name' => 'Other', 'slug' => 'not a valid slug!'])
+            ->assertSessionHasErrors('slug');
+
+        $this->actingAs($admin)
+            ->post(route('admin.categories.store'), ['name' => 'Other'])
+            ->assertSessionHasErrors('slug');
     }
 
     public function test_a_duplicate_category_name_is_rejected(): void
@@ -263,7 +296,7 @@ class AdminCatalogTest extends TestCase
         $this->category(['name' => 'Timber']);
 
         $this->actingAs($admin)
-            ->post(route('admin.categories.store'), ['name' => 'Timber'])
+            ->post(route('admin.categories.store'), ['name' => 'Timber', 'slug' => 'timber-2'])
             ->assertSessionHasErrors('name');
     }
 

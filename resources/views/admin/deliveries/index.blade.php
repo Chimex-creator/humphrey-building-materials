@@ -60,10 +60,30 @@
                 @endif
             </div>
         @else
+            {{-- PHASE 13 — bulk status updates ("failed" needs the individual
+                 page's reason field; "delivered" needs one received-by name). --}}
+            <form action="{{ route('admin.deliveries.bulk') }}" method="POST" id="bulk-deliveries-form"
+                  class="filter-row" style="margin-bottom: 12px;">
+                @csrf
+                @method('PATCH')
+                <span class="empty-inline">Bulk — <strong id="bulk-count">0</strong> selected:</span>
+                <select name="status" class="filter-select" required>
+                    <option value="">Move selected to…</option>
+                    <option value="pending">Pending</option>
+                    <option value="confirmed">Confirmed / Assigned</option>
+                    <option value="out_for_delivery">Out for Delivery</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+                <input type="text" name="received_by" maxlength="100" class="filter-input"
+                       placeholder="Received by (needed for Delivered)" style="min-width: 200px;">
+                <button type="submit" class="btn btn-sm btn-navy">Apply to selected</button>
+            </form>
+
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="bulk-select-all" aria-label="Select all deliveries"></th>
                             <th>Order</th>
                             <th>Customer</th>
                             <th>Delivery Address</th>
@@ -78,6 +98,11 @@
                         @foreach ($deliveries as $delivery)
                             @php($order = $delivery->order)
                             <tr>
+                                <td>
+                                    <input type="checkbox" class="bulk-row" name="delivery_ids[]"
+                                           value="{{ $delivery->id }}" form="bulk-deliveries-form"
+                                           aria-label="Select delivery {{ $order?->order_number ?? $delivery->id }}">
+                                </td>
                                 <td><strong>{{ $order?->order_number ?? '—' }}</strong></td>
                                 <td>
                                     {{ $order?->customer_name }}<br>
@@ -86,7 +111,7 @@
                                 <td>{{ $order?->delivery_address }}</td>
                                 <td>{{ $order?->preferred_delivery_date?->format('d M Y') ?? '—' }}</td>
                                 <td>{{ $delivery->confirmed_date?->format('d M Y') ?? '—' }}</td>
-                                <td>{{ $delivery->assignee?->name ?? '—' }}</td>
+                                <td>{{ $delivery->assignedPersonLabel() ?? '—' }}</td>
                                 <td>
                                     <span class="badge {{ $delivery->statusBadgeClass() }}">{{ $delivery->statusLabel() }}</span>
                                 </td>
@@ -118,3 +143,51 @@
         @endif
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        var selectAll = document.getElementById('bulk-select-all');
+        if (!selectAll) return;
+
+        var rows = Array.prototype.slice.call(document.querySelectorAll('.bulk-row'));
+        var counter = document.getElementById('bulk-count');
+        var form = document.getElementById('bulk-deliveries-form');
+
+        function refresh() {
+            var count = rows.filter(function (r) { return r.checked; }).length;
+            if (counter) counter.textContent = String(count);
+        }
+
+        selectAll.addEventListener('change', function () {
+            rows.forEach(function (r) { r.checked = selectAll.checked; });
+            refresh();
+        });
+        rows.forEach(function (r) { r.addEventListener('change', refresh); });
+
+        if (form) {
+            form.addEventListener('submit', function (event) {
+                var picked = rows.filter(function (r) { return r.checked; }).length;
+                if (picked === 0) {
+                    event.preventDefault();
+                    showToast('Select at least one delivery first.', 'error');
+                    return;
+                }
+                var statusSelect = form.querySelector('select[name="status"]');
+                var value = statusSelect ? statusSelect.value : '';
+                var receivedBy = form.querySelector('input[name="received_by"]');
+                if (value === 'delivered' && receivedBy && !receivedBy.value.trim()) {
+                    event.preventDefault();
+                    showToast('Enter who received the batch before marking Delivered.', 'error');
+                    return;
+                }
+                var label = statusSelect && statusSelect.options[statusSelect.selectedIndex]
+                    ? statusSelect.options[statusSelect.selectedIndex].text : '';
+                if (!confirm('Update ' + picked + ' delivery record(s) to "' + label + '"?')) {
+                    event.preventDefault();
+                }
+            });
+        }
+    })();
+</script>
+@endpush

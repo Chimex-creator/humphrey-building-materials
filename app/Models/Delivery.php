@@ -20,6 +20,7 @@ class Delivery extends Model
     protected $fillable = [
         'order_id',
         'assigned_to',
+        'assigned_name',
         'status',
         'confirmed_date',
         'notes',
@@ -73,6 +74,19 @@ class Delivery extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * PHASE 6 — who is taking this delivery, in display order.
+     *
+     * The staff dropdown wins over free text, exactly as the update rule
+     * resolves it: the controller only ever stores one of the two, and it
+     * clears the free-text name whenever a staff account is chosen. The
+     * label mirrors that so the board can never disagree with the record.
+     */
+    public function assignedPersonLabel(): ?string
+    {
+        return $this->assignee?->name ?: ($this->assigned_name ?: null);
     }
 
     /* ------------------------------------------------------------

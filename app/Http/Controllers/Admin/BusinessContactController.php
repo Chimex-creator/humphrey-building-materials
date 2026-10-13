@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\BusinessContact;
+use App\Models\Setting;
 use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -22,7 +23,42 @@ class BusinessContactController extends Controller
             ->orderBy('id')
             ->get();
 
-        return view('admin.contacts.index', compact('contacts'));
+        $callToOrderContactId = (int) Setting::get(BusinessContact::CALL_TO_ORDER_SETTING, 0);
+
+        return view('admin.contacts.index', compact('contacts', 'callToOrderContactId'));
+    }
+
+    /**
+     * PHASE 5 — choose which contact's number the product page's
+     * "Call to Order" action dials. Independent of the homepage's first
+     * customer-care contact; NULL falls back to business_phone.
+     */
+    public function setCallToOrder(Request $request, ActivityLogger $logger)
+    {
+        $data = $request->validate([
+            'contact_id' => ['nullable', 'integer', 'exists:business_contacts,id'],
+        ]);
+
+        $contactId = (int) ($data['contact_id'] ?? 0);
+
+        if ($contactId > 0) {
+            $contact = BusinessContact::findOrFail($contactId);
+            if (! $contact->isActive()) {
+                return back()->withErrors([
+                    'contact_id' => '"'.$contact->label.'" is deactivated — reactivate it first, or choose the fallback.',
+                ]);
+            }
+        }
+
+        Setting::set(BusinessContact::CALL_TO_ORDER_SETTING, $contactId > 0 ? (string) $contactId : null);
+
+        $logger->log('settings.updated', null, $contactId > 0
+            ? 'Product "Call to Order" destination set to contact #'.$contactId.'.'
+            : 'Product "Call to Order" destination reset to the business_phone fallback.');
+
+        return back()->with('status', $contactId > 0
+            ? 'Product enquiries now call the selected contact.'
+            : 'Product enquiries now call the business phone number again.');
     }
 
     public function create()
@@ -74,6 +110,13 @@ class BusinessContactController extends Controller
 
         $contact->update(['status' => $activating ? 'active' : 'inactive']);
 
+        // PHASE 5/10 — an inactive contact must never become the destination
+        // of new calls; clear the selection so the fallback takes over.
+        $wasCallToOrder = (int) Setting::get(BusinessContact::CALL_TO_ORDER_SETTING, 0) === $contact->id;
+        if (! $activating && $wasCallToOrder) {
+            Setting::set(BusinessContact::CALL_TO_ORDER_SETTING, null);
+        }
+
         $logger->log($activating ? 'contact.activated' : 'contact.deactivated', $contact, sprintf(
             'Customer-care contact "%s" %s.',
             $contact->label,
@@ -83,6 +126,7 @@ class BusinessContactController extends Controller
         return back()->with(
             'status',
             'Contact "'.$contact->label.'" '.($activating ? 'reactivated.' : 'deactivated.')
+            .(! $activating && $wasCallToOrder ? ' It was the product-enquiry number, so enquiries now use the business phone fallback.' : '')
         );
     }
 
@@ -92,6 +136,12 @@ class BusinessContactController extends Controller
      */
     public function destroy(BusinessContact $contact, ActivityLogger $logger)
     {
+        // PHASE 5 — deleting the selected product-enquiry contact falls back.
+        $wasCallToOrder = (int) Setting::get(BusinessContact::CALL_TO_ORDER_SETTING, 0) === $contact->id;
+        if ($wasCallToOrder) {
+            Setting::set(BusinessContact::CALL_TO_ORDER_SETTING, null);
+        }
+
         $logger->log('contact.deleted', $contact, sprintf(
             'Customer-care contact "%s" (%s) deleted.',
             $contact->label,
@@ -134,6 +184,8 @@ class BusinessContactController extends Controller
                 ]);
             }
 
+            $this->clearCallToOrderIfUnavailable();
+
             return back()->with('status', $count > 0
                 ? $count.' contact(s) deleted.'
                 : 'Nothing to delete.');
@@ -156,9 +208,24 @@ class BusinessContactController extends Controller
             ]);
         }
 
+        $this->clearCallToOrderIfUnavailable();
+
         return back()->with('status', $changed > 0
             ? $changed.' contact(s) marked as '.$status.'.'
             : 'Nothing to change — the selected contacts were already '.$status.'.');
+    }
+
+    /**
+     * PHASE 5 — if the product-enquiry contact was deactivated or deleted
+     * (by any path), reset the setting so the owner-number fallback applies.
+     */
+    private function clearCallToOrderIfUnavailable(): void
+    {
+        $selectedId = (int) Setting::get(BusinessContact::CALL_TO_ORDER_SETTING, 0);
+
+        if ($selectedId > 0 && ! BusinessContact::active()->whereKey($selectedId)->exists()) {
+            Setting::set(BusinessContact::CALL_TO_ORDER_SETTING, null);
+        }
     }
 
     /** @return array<string, mixed> */

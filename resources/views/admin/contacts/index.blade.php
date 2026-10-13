@@ -17,6 +17,35 @@
         <a href="{{ route('admin.contacts.create') }}" class="btn btn-primary">+ Add Contact</a>
     </div>
 
+    {{-- PHASE 5 — choose which contact's number the product page's
+         "Call to Order" action dials. Falls back to business_phone. --}}
+    @if ($contacts->where('status', 'active')->isNotEmpty())
+        <form action="{{ route('admin.contacts.call-to-order') }}" method="POST" class="admin-card" style="margin-bottom: 18px;">
+            @csrf
+            @method('PATCH')
+            <h3 style="margin-bottom: 6px;">Product &ldquo;Call to Order&rdquo; number</h3>
+            <p style="margin-bottom: 10px; font-size: 0.92rem;">
+                The phone dialled by the <strong>Call to Order</strong> button on product pages.
+                This is separate from the homepage&rsquo;s first customer-care &ldquo;Call Us&rdquo; link.
+                Choose the fallback to keep dialling the business phone number from Settings.
+            </p>
+            <div class="filter-row">
+                <select name="contact_id" id="call-to-order-contact" style="min-width: 260px;">
+                    <option value="">Fallback — business phone number from Settings</option>
+                    @foreach ($contacts->where('status', 'active') as $contact)
+                        <option value="{{ $contact->id }}" @selected((int) $callToOrderContactId === $contact->id)>
+                            {{ $contact->label }} — {{ $contact->phone }}
+                        </option>
+                    @endforeach
+                </select>
+                <button type="submit" class="btn btn-sm btn-navy">Save number</button>
+            </div>
+            @error('contact_id')
+                <p class="field-error" style="margin-top: 6px;">{{ $message }}</p>
+            @enderror
+        </form>
+    @endif
+
     <div class="admin-card">
         @if ($contacts->isEmpty())
             <div class="empty-state">
@@ -57,7 +86,12 @@
                                            aria-label="Select {{ $contact->label }}">
                                 </td>
                                 <td>{{ $contact->contact_order }}</td>
-                                <td><strong>{{ $contact->label }}</strong></td>
+                                <td>
+                                    <strong>{{ $contact->label }}</strong>
+                                    @if ((int) $callToOrderContactId === $contact->id)
+                                        <span class="badge badge-green" title="Product pages dial this number">Product enquiries</span>
+                                    @endif
+                                </td>
                                 <td>
                                     <a href="{{ $contact->telHref() }}">{{ $contact->phone }}</a>
                                 </td>

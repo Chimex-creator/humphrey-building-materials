@@ -14,6 +14,27 @@
         </div>
     </section>
 
+    {{-- Professional confirmation — only ever flashed by the server once the
+         record actually exists (one-time session flash, gone on refresh). --}}
+    @if (session('submission'))
+        <section class="section" style="padding-bottom: 0;">
+            <div class="container">
+                <div class="submission-confirm" role="status">
+                    <span class="submission-confirm-mark" aria-hidden="true">✓</span>
+                    <div class="submission-confirm-body">
+                        <h2>{{ session('submission.title') }}</h2>
+                        <p>{{ session('submission.message') }}</p>
+                        <p class="submission-confirm-ref">
+                            Your reference number is
+                            <strong>{{ session('submission.reference') }}</strong>
+                            — please keep it; quote it whenever you contact us about this request.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    @endif
+
     <section class="section">
         <div class="container auth-wrap">
             <div class="auth-card auth-card-wide">

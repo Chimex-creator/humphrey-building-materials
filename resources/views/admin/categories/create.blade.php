@@ -18,7 +18,20 @@
                        class="{{ $errors->has('name') ? 'is-invalid' : '' }}"
                        placeholder="e.g. Roofing Materials">
                 @error('name')<span class="field-error">{{ $message }}</span>@enderror
-                <small class="field-help">The URL slug is generated automatically from the name.</small>
+            </div>
+
+            {{-- PHASE 11 — explicit, editable slug (suggested from the name). --}}
+            <div class="form-group">
+                <label for="slug">URL Slug <span class="req">*</span></label>
+                <input type="text" id="slug" name="slug" value="{{ old('slug') }}" required maxlength="120"
+                       data-slug-touched="{{ old('slug') ? '1' : '0' }}"
+                       class="{{ $errors->has('slug') ? 'is-invalid' : '' }}"
+                       placeholder="e.g. roofing-materials">
+                @error('slug')<span class="field-error">{{ $message }}</span>@enderror
+                <small class="field-help">
+                    Letters, numbers, dashes and underscores only. Suggested from the name —
+                    edit it if you prefer a different URL (e.g. <code>products/roofing-materials</code>).
+                </small>
             </div>
 
             <div class="form-group">
@@ -36,3 +49,23 @@
         </form>
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        var name = document.getElementById('name');
+        var slug = document.getElementById('slug');
+        if (!name || !slug) return;
+
+        var touched = slug.value !== '' || slug.dataset.slugTouched === '1';
+        slug.addEventListener('input', function () { touched = true; });
+        name.addEventListener('input', function () {
+            if (touched) return;
+            slug.value = name.value.toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .trim()
+                .replace(/[\s-]+/g, '-');
+        });
+    })();
+</script>
+@endpush

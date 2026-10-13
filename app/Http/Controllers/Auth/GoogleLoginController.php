@@ -88,6 +88,10 @@ class GoogleLoginController extends Controller
             ->orWhere('google_id', $googleId)
             ->first();
 
+        // PHASE 2 — a brand-new Google customer gets the first-time greeting;
+        // an existing customer signing in again gets "Welcome back".
+        $isNewCustomer = false;
+
         if ($user) {
             // Google sign-in is customer-only: an admin/staff account must
             // never log in (or be changed) through Google.
@@ -126,6 +130,7 @@ class GoogleLoginController extends Controller
                     'is_active' => true,
                     'google_id' => $googleId,
                 ]);
+                $isNewCustomer = true;
             } catch (UniqueConstraintViolationException) {
                 // Lost a race with another request — reuse that account.
                 $user = User::where('email', $email)->first();
@@ -143,6 +148,6 @@ class GoogleLoginController extends Controller
 
         return redirect()
             ->intended(route('home'))
-            ->with('status', 'Welcome, '.$user->name.'!');
+            ->with('status', ($isNewCustomer ? 'Welcome, ' : 'Welcome back, ').$user->name.'!');
     }
 }

@@ -151,7 +151,7 @@ class CustomerController extends Controller
     }
 
     /** Activate or deactivate a customer account (admins only). */
-    public function updateStatus(Request $request, User $user)
+    public function updateStatus(Request $request, User $user, ActivityLogger $logger)
     {
         // Customers only. An admin is never a customer, so locking your own
         // account out is impossible from here - that rule lives in
@@ -166,6 +166,17 @@ class CustomerController extends Controller
 
         $user->is_active = $active;
         $user->save();
+
+        // PHASE 1 — single toggles are as sensitive as bulk runs, so they
+        // now leave the same audit trail.
+        $logger->log($active ? 'user.activated' : 'user.deactivated', $user, sprintf(
+            '%s account %s.',
+            $user->name,
+            $active ? 'reactivated' : 'deactivated'
+        ), [
+            'to_active' => $active,
+            'via' => 'customer_directory',
+        ]);
 
         return back()->with('status', $active
             ? $user->name.' can log in again.'

@@ -62,18 +62,102 @@ class OrderController extends Controller
             'status' => ['required', Rule::in(array_keys(Order::STATUSES))],
         ]);
 
-        $next = $data['status'];
+        $result = $this->applyStatusChange($order, $data['status'], $logger);
 
+        if (! $result['ok']) {
+            return back()->with('error', $result['reason']);
+        }
+
+        return redirect()
+            ->route('admin.orders.show', $order)
+            ->with('status', $result['message']);
+    }
+
+    /**
+     * PHASE 12 — bulk status change. Every selected order is validated with
+     * EXACTLY the same state-machine rules as the single-record form
+     * (applyStatusChange), so nothing can bypass payment/return guards.
+     * Mixed selections are processed safely: eligible rows move, the rest
+     * are skipped and reported with reasons.
+     */
+    public function bulk(Request $request, ActivityLogger $logger)
+    {
+        $data = $request->validate([
+            'status' => ['required', Rule::in(array_keys(Order::STATUSES))],
+            'order_ids' => ['required', 'array', 'min:1'],
+            'order_ids.*' => ['integer', 'exists:orders,id'],
+        ]);
+
+        $next = $data['status'];
+        $orders = Order::with('delivery', 'items', 'user')
+            ->whereIn('id', $data['order_ids'])
+            ->get();
+
+        $changed = 0;
+        $skipped = [];
+
+        foreach ($orders as $order) {
+            $result = $this->applyStatusChange($order, $next, $logger);
+
+            if ($result['ok']) {
+                $changed++;
+            } else {
+                $skipped[] = $order->order_number.': '.$result['reason'];
+            }
+        }
+
+        $label = Order::STATUSES[$next] ?? $next;
+
+        if ($changed > 0) {
+            $logger->log('orders.bulk_status', null, sprintf(
+                '%d order(s) moved to "%s" in one bulk action.',
+                $changed,
+                $label
+            ), [
+                'count' => $changed,
+                'to_status' => $next,
+                'skipped' => count($skipped),
+            ]);
+        }
+
+        $message = $changed > 0
+            ? $changed.' order(s) moved to "'.$label.'".'
+            : 'No orders were changed.';
+
+        if ($skipped !== []) {
+            $message .= ' Skipped '.count($skipped).': '.implode(' | ', array_slice($skipped, 0, 5))
+                .(count($skipped) > 5 ? ' …' : '');
+        }
+
+        return back()->with($skipped === [] ? 'status' : ($changed > 0 ? 'status' : 'error'), $message);
+    }
+
+    /**
+     * The one true order-status transition (Phase 14 — shared by the
+     * single form and bulk actions). Returns ok + reason/message.
+     *
+     * @return array{ok: bool, reason: ?string, message: ?string}
+     */
+    private function applyStatusChange(Order $order, string $next, ActivityLogger $logger): array
+    {
         if (! in_array($next, $order->allowedNextStatuses(), true)) {
-            return back()->with('error', 'Cannot change "'.$order->statusLabel().'" to "'.(Order::STATUSES[$next] ?? $next).'".');
+            return [
+                'ok' => false,
+                'reason' => 'Cannot change "'.$order->statusLabel().'" to "'.(Order::STATUSES[$next] ?? $next).'".',
+                'message' => null,
+            ];
         }
 
         // PHASE 10 — an order cannot be closed while a return request is open.
         if ($next === 'closed' && $order->hasPendingReturns()) {
             $open = $order->pendingReturns()->count();
 
-            return back()->with('error', 'Cannot close '.$order->order_number.' yet — '
-                .$open.' return request'.($open === 1 ? ' is' : 's are').' still awaiting review.');
+            return [
+                'ok' => false,
+                'reason' => 'Cannot close '.$order->order_number.' yet — '.$open
+                    .' return request'.($open === 1 ? ' is' : 's are').' still awaiting review.',
+                'message' => null,
+            ];
         }
 
         $previous = $order->status;
@@ -150,9 +234,7 @@ class OrderController extends Controller
                 .' was already received — arrange the refund with the customer directly.';
         }
 
-        return redirect()
-            ->route('admin.orders.show', $order)
-            ->with('status', $message);
+        return ['ok' => true, 'reason' => null, 'message' => $message];
     }
 
     /**

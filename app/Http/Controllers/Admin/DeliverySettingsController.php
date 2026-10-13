@@ -7,6 +7,7 @@ use App\Models\DeliveryArea;
 use App\Models\DeliveryState;
 use App\Models\DeliveryZone;
 use App\Services\ActivityLogger;
+use App\Support\StateLabels;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -34,7 +35,15 @@ class DeliverySettingsController extends Controller
         $statesQuery = DeliveryState::withCount('areas')->with('areas')->orderBy('name');
         $search = trim((string) ($data['state_search'] ?? ''));
         if ($search !== '') {
-            $statesQuery->where('name', 'like', "%{$search}%");
+            // The stored name and the public label can differ — searching
+            // either one finds the same row.
+            $statesQuery->where(function ($query) use ($search) {
+                $query->where('name', 'like', "%{$search}%");
+
+                foreach (StateLabels::storedNamesMatching($search) as $storedName) {
+                    $query->orWhere('name', 'like', "%{$storedName}%");
+                }
+            });
         }
         $states = $statesQuery->paginate(15)->withQueryString();
 
@@ -129,28 +138,39 @@ class DeliverySettingsController extends Controller
     {
         $data = $this->validateState($request, $state);
 
-        if ($state->name === $data['name']
+        // The name field is pre-filled with the public label, which on purpose
+        // may differ from the stored value — such a difference alone must never
+        // rewrite the row (a rename has to be a genuinely different name).
+        if (StateLabels::sameValue($state->name, $data['name'])) {
+            unset($data['name']);
+        }
+
+        $nameChanged = isset($data['name']);
+        $label = StateLabels::label($state->name);
+
+        if (! $nameChanged
             && $state->status === $data['status']
             && $state->default_fee == $data['default_fee']) {
-            return back()->with('error', 'Nothing changed on '.$state->name.'.');
+            return back()->with('error', 'Nothing changed on '.$label.'.');
         }
 
         $state->update($data);
+        $label = StateLabels::label($state->name);
 
         $logger->log('delivery.settings_updated', $state,
-            'Delivery state "'.$state->name.'" updated.', $data);
+            'Delivery state "'.$label.'" updated.', $data);
 
-        return back()->with('status', 'State "'.$state->name.'" saved.');
+        return back()->with('status', 'State "'.$label.'" saved.');
     }
 
     public function destroyState(DeliveryState $state, ActivityLogger $logger)
     {
         if ($state->areas()->exists()) {
             return back()->with('error',
-                '"'.$state->name.'" still has areas inside it. Delete or move those areas first.');
+                '"'.StateLabels::label($state->name).'" still has areas inside it. Delete or move those areas first.');
         }
 
-        $name = $state->name;
+        $name = StateLabels::label($state->name);
         $state->delete();
 
         $logger->log('delivery.settings_updated', null, 'Delivery state "'.$name.'" deleted.');
@@ -170,7 +190,7 @@ class DeliverySettingsController extends Controller
 
         $state = DeliveryState::find($data['delivery_state_id']);
         $logger->log('delivery.settings_updated', null,
-            'Delivery area "'.$data['name'].'" added to '.$state?->name.'.', $data);
+            'Delivery area "'.$data['name'].'" added to '.StateLabels::label($state?->name).'.', $data);
 
         return back()->with('status', 'Area "'.$data['name'].'" added.');
     }
@@ -201,7 +221,7 @@ class DeliverySettingsController extends Controller
     public function destroyArea(DeliveryArea $area, ActivityLogger $logger)
     {
         $name = $area->name;
-        $stateName = $area->state?->name;
+        $stateName = StateLabels::label($area->state?->name);
         $area->delete();
 
         $logger->log('delivery.settings_updated', null,

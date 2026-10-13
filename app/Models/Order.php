@@ -273,7 +273,7 @@ class Order extends Model
             return null;
         }
 
-        $place = collect([$this->delivery_area_name, $this->delivery_state_name])
+        $place = collect([$this->delivery_area_name, \App\Support\StateLabels::label($this->delivery_state_name)])
             ->filter()
             ->implode(', ');
 

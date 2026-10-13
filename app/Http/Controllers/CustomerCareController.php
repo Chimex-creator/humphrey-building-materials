@@ -21,6 +21,18 @@ use Illuminate\Http\Request;
  */
 class CustomerCareController extends Controller
 {
+    /** Categories that report a problem — they get complaint wording. */
+    private const COMPLAINT_CATEGORIES = [
+        'order_issue',
+        'delivery_issue',
+        'product_issue',
+        'payment_issue',
+        'return_issue',
+    ];
+
+    /** How long an identical repeat submission counts as a double-send. */
+    private const DUPLICATE_WINDOW_MINUTES = 1;
+
     /** The customer care page: contact info, complaint form, own records. */
     public function index(Request $request)
     {
@@ -70,6 +82,20 @@ class CustomerCareController extends Controller
             }
         }
 
+        // An accidental repeat (double-click, or the back button followed by
+        // "send" again) must not open a second record of the same message.
+        $duplicate = SupportTicket::where('user_id', $user->id)
+            ->where('category', $data['category'])
+            ->where('subject', $data['subject'])
+            ->where('description', $data['description'])
+            ->where('created_at', '>=', now()->subMinutes(self::DUPLICATE_WINDOW_MINUTES))
+            ->latest('id')
+            ->first();
+
+        if ($duplicate) {
+            return $this->submitted($duplicate);
+        }
+
         $ticket = SupportTicket::create([
             'reference' => 'TMP-'.uniqid(),
             'user_id' => $user->id,
@@ -99,10 +125,41 @@ class CustomerCareController extends Controller
             'Customer care request '.$ticket->reference.' opened by '.$ticket->customer_name.'.',
             ['category' => $ticket->category, 'subject' => $ticket->subject]);
 
+        return $this->submitted($ticket);
+    }
+
+    /**
+     * Send the customer to their record with the professional confirmation.
+     *
+     * The wording is only ever built here — after the record exists — so a
+     * failed validation (which never reaches this method) can never show a
+     * success message.
+     */
+    private function submitted(SupportTicket $ticket)
+    {
+        $isComplaint = in_array($ticket->category, self::COMPLAINT_CATEGORIES, true);
+
+        $message = $isComplaint
+            ? 'Thank you for bringing this to our attention. Your complaint has been received, '
+                .'and our customer care team will review it and get back to you as soon as possible.'
+            : 'Thank you for contacting Humphrey Building Materials. We have received your message '
+                .'and our customer care team will review your request and get back to you as soon as possible.';
+
+        $reference = $ticket->reference;
+
         return redirect()
             ->route('support.show', $ticket)
-            ->with('status', 'Thanks — your message has been received. Your reference is '
-                .$ticket->reference.'. Our team will get back to you.');
+            // Plain-text echo of the same confirmation (kept for the flash
+            // message contract) …
+            ->with('status', 'Message Submitted Successfully. '.$message
+                .' Your reference is '.$reference.' — please keep it safe.')
+            // … and the structured payload the confirmation panel renders.
+            ->with('submission', [
+                'kind' => $isComplaint ? 'complaint' : 'message',
+                'title' => 'Message Submitted Successfully',
+                'message' => $message,
+                'reference' => $reference,
+            ]);
     }
 
     /** View one of the customer's own support records (ownership enforced). */

@@ -136,7 +136,7 @@
                                     @csrf
                                     @method('PATCH')
                                     <input type="text" name="name" class="filter-input" maxlength="60" required
-                                           value="{{ old('states.'.$state->id.'.name', $state->name) }}" aria-label="State name">
+                                           value="{{ old('states.'.$state->id.'.name', \App\Support\StateLabels::label($state->name)) }}" aria-label="State name">
                                     <input type="number" name="default_fee" class="filter-input" style="max-width:150px;"
                                            min="0" step="1"
                                            placeholder="Blank = not serviceable"
@@ -155,7 +155,7 @@
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="btn btn-sm btn-danger"
-                                            onclick="return confirm('Delete state {{ $state->name }}?');">
+                                            onclick="return confirm('Delete state {{ \App\Support\StateLabels::label($state->name) }}?');">
                                         Delete
                                     </button>
                                 </form>
@@ -199,7 +199,7 @@
                 <option value="">State...</option>
                 @foreach ($allStates as $state)
                     <option value="{{ $state->id }}" {{ (string) old('area.delivery_state_id') === (string) $state->id ? 'selected' : '' }}>
-                        {{ $state->name }}
+                        {{ \App\Support\StateLabels::label($state->name) }}
                     </option>
                 @endforeach
             </select>
@@ -225,7 +225,7 @@
                 <option value="">All states</option>
                 @foreach ($allStates as $state)
                     <option value="{{ $state->id }}" {{ ($data['state_id'] ?? '') == $state->id ? 'selected' : '' }}>
-                        {{ $state->name }}
+                        {{ \App\Support\StateLabels::label($state->name) }}
                     </option>
                 @endforeach
             </select>
@@ -258,7 +258,7 @@
                                     <select name="delivery_state_id" class="filter-select" aria-label="State">
                                         @foreach ($allStates as $state)
                                             <option value="{{ $state->id }}" {{ $area->delivery_state_id === $state->id ? 'selected' : '' }}>
-                                                {{ $state->name }}
+                                                {{ \App\Support\StateLabels::label($state->name) }}
                                             </option>
                                         @endforeach
                                     </select>

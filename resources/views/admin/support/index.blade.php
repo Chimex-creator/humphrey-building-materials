@@ -68,10 +68,21 @@
                 <p>Nothing matches these filters. New complaints from the website appear here instantly.</p>
             </div>
         @else
+            {{-- PHASE 16 — bulk In Progress / Resolve; eligible rows only. --}}
+            <form action="{{ route('admin.support.bulk') }}" method="POST" id="bulk-support-form"
+                  class="filter-row" style="margin-bottom: 12px;">
+                @csrf
+                @method('PATCH')
+                <span class="empty-inline">Bulk — <strong id="bulk-count">0</strong> selected:</span>
+                <button type="submit" name="action" value="start_progress" class="btn btn-sm btn-outline-dark">Mark In Progress</button>
+                <button type="submit" name="action" value="resolve" class="btn btn-sm btn-navy">Resolve</button>
+            </form>
+
             <div class="table-wrap">
                 <table class="admin-table">
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="bulk-select-all" aria-label="Select all tickets"></th>
                             <th>Reference</th>
                             <th>Customer</th>
                             <th>Subject</th>
@@ -84,6 +95,11 @@
                     <tbody>
                         @foreach ($tickets as $ticket)
                             <tr>
+                                <td>
+                                    <input type="checkbox" class="bulk-row" name="ticket_ids[]"
+                                           value="{{ $ticket->id }}" form="bulk-support-form"
+                                           aria-label="Select {{ $ticket->reference }}">
+                                </td>
                                 <td><strong>{{ $ticket->reference }}</strong></td>
                                 <td>
                                     {{ $ticket->customer_name }}<br>
@@ -130,3 +146,43 @@
         @endif
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        var selectAll = document.getElementById('bulk-select-all');
+        if (!selectAll) return;
+
+        var rows = Array.prototype.slice.call(document.querySelectorAll('.bulk-row'));
+        var counter = document.getElementById('bulk-count');
+        var form = document.getElementById('bulk-support-form');
+
+        function refresh() {
+            var count = rows.filter(function (r) { return r.checked; }).length;
+            if (counter) counter.textContent = String(count);
+        }
+
+        selectAll.addEventListener('change', function () {
+            rows.forEach(function (r) { r.checked = selectAll.checked; });
+            refresh();
+        });
+        rows.forEach(function (r) { r.addEventListener('change', refresh); });
+
+        if (form) {
+            form.addEventListener('submit', function (event) {
+                var picked = rows.filter(function (r) { return r.checked; }).length;
+                if (picked === 0) {
+                    event.preventDefault();
+                    showToast('Select at least one ticket first.', 'error');
+                    return;
+                }
+                var action = event.submitter && event.submitter.value;
+                var verb = action === 'resolve' ? 'resolve' : 'mark in progress';
+                if (!confirm('Are you sure you want to ' + verb + ' ' + picked + ' selected ticket(s)? Ineligible rows will be skipped.')) {
+                    event.preventDefault();
+                }
+            });
+        }
+    })();
+</script>
+@endpush

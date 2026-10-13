@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CheckRole;
+use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -20,6 +21,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => CheckRole::class,
         ]);
+
+        // PHASE 1 — every authenticated request re-checks is_active, so a
+        // deactivated account's existing session is terminated immediately.
+        // NOTE: `auth` is a middleware *alias* in Laravel 11+, not a group —
+        // appending to a group named `auth` would shadow the alias and drop
+        // Authenticate. The `web` group is the correct hook (session started;
+        // the middleware ignores guests and only logs out inactive users).
+        $middleware->appendToGroup('web', EnsureUserIsActive::class);
 
         // Paystack calls this route from its own servers — it has no session
         // cookie, so the CSRF token check must be skipped for it only.
