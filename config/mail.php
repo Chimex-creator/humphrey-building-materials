@@ -27,7 +27,7 @@ return [
     |
     | Laravel supports a variety of mail "transport" drivers that can be used
     | when delivering an email. You may specify which one you're using for
-    | your mailers below. You may also add additional mailers if needed.
+    | each mailer below.
     |
     | Supported: "smtp", "sendmail", "mailgun", "ses", "ses-v2",
     |            "postmark", "resend", "log", "array",
@@ -63,6 +63,10 @@ return [
 
         'resend' => [
             'transport' => 'resend',
+        ],
+
+        'brevo_api' => [
+            'transport' => 'brevo_api',
         ],
 
         'sendmail' => [
@@ -105,8 +109,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | You may wish for all emails sent by your application to be sent from
-    | the same address. Here you may specify a name and address that is
-    | used globally for all emails that are sent by your application.
+    | the same address. Here you may specify the default sender address
+    | and name.
     |
     */
 

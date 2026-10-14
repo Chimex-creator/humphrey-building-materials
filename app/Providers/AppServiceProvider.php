@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Support\Cart;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +23,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Mail::extend('brevo_api', function (array $config = []) {
+            return new \App\Mail\BrevoApiTransport(
+                config('services.brevo.key')
+            );
+        });
+
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
         }
